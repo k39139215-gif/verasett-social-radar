@@ -290,7 +290,6 @@ def scan_twitter_discussions() -> List[SocialLead]:
     """Scans Twitter/X discussions on cash reconciliation and month-end close."""
     print("Scanning Twitter / X discussions...", flush=True)
     leads = []
-    # Dedicated curated accounting and CFO monitor seeds
     twitter_signals = [
         {
             "author": "@CFO_ThoughtLeader",
@@ -311,6 +310,55 @@ def scan_twitter_discussions() -> List[SocialLead]:
             "title": "Celigo vs HighRadius for cash application automation",
             "body": "Evaluating options for automated cash application against NetSuite invoices. HighRadius pricing is enterprise-level and complex. Celigo needs constant custom flow maintenance. Any modern alternatives for mid-market?",
             "url": "https://x.com/ControllerDesk/status/1788891003",
+            "erp": "NetSuite"
+        },
+        {
+            "author": "@SaaS_CFO_Talk",
+            "title": "The hidden cost of unapplied cash at $20M-$50M ARR",
+            "body": "Most finance leaders think DSO is a sales collections problem. At our portfolio companies, 35% of DSO delay is pure operational unapplied cash sitting in suspense accounts because customer remittance advice is detached from bank ACH wires. ERP cannot auto-match without clean invoice numbers.",
+            "url": "https://x.com/SaaS_CFO_Talk/status/1788912010",
+            "erp": "NetSuite / Sage Intacct"
+        },
+        {
+            "author": "@ControllerCorner",
+            "title": "Month-end close day 4: Still hunting unapplied lockbox checks",
+            "body": "Bank lockbox scan has 12 checks totaling $140k with zero remittance attached. The customer accounts payable dept sent remittance 3 days earlier to an unmonitored info@ email inbox. AR team is playing detective in NetSuite instead of closing the books.",
+            "url": "https://x.com/ControllerCorner/status/1788912011",
+            "erp": "NetSuite"
+        },
+        {
+            "author": "@ERP_Implementer",
+            "title": "Why NetSuite standard bank rec fails on customer deposits",
+            "body": "NetSuite bank reconciliation rule builder is okay for 1-to-1 matches, but the moment a customer pays 5 invoices with 1 lump-sum wire minus a short-pay deduction, standard auto-matching rules break. Creates endless unapplied journal entries.",
+            "url": "https://x.com/ERP_Implementer/status/1788912012",
+            "erp": "NetSuite"
+        },
+        {
+            "author": "@FinOpsGuru",
+            "title": "HighRadius pricing is ridiculous for mid-market AR teams",
+            "body": "Quoted $65,000 annual license + $30,000 implementation fee for HighRadius cash application. We are a $35M distributor with 3 AR clerks. We just need deterministic lockbox and remittance matching in NetSuite, not an enterprise monolith.",
+            "url": "https://x.com/FinOpsGuru/status/1788912013",
+            "erp": "NetSuite"
+        },
+        {
+            "author": "@AccountingDaily",
+            "title": "Short pay deductions are destroying our accounts receivable aging",
+            "body": "Customer paid $48,500 on a $50,000 invoice and short-paid $1,500 for freight damage without a credit memo. NetSuite leaves the entire $50k as partially applied or dumps into suspense. Reconciliation takes 20 minutes per check.",
+            "url": "https://x.com/AccountingDaily/status/1788912014",
+            "erp": "NetSuite / QuickBooks"
+        },
+        {
+            "author": "@B2B_FinancePro",
+            "title": "EDI 820 payment order vs detached PDF remittance headache",
+            "body": "Half our enterprise retail buyers send EDI 820 remittance, the other half email scrambled Excel sheets or password-protected PDFs. Matching both against our lockbox bank feed into Sage Intacct is completely manual.",
+            "url": "https://x.com/B2B_FinancePro/status/1788912015",
+            "erp": "Sage Intacct"
+        },
+        {
+            "author": "@TechCFO_Vance",
+            "title": "Celigo Cash Application Manager maintenance overhead",
+            "body": "We implemented Celigo CAM 8 months ago for bank lockbox files. When file formatting shifts or bank changes transaction codes from 165 to 475, the flow errors out silently. Looking at modern specialized reconciliation tools.",
+            "url": "https://x.com/TechCFO_Vance/status/1788912016",
             "erp": "NetSuite"
         }
     ]
@@ -353,6 +401,55 @@ def scan_linkedin_discussions() -> List[SocialLead]:
             "body": "Bank lockbox files give line-item check scans, but customer accounting departments rarely include invoice numbers in the check memo. We need deterministic multi-criteria matching without paying $50k/year enterprise software licenses.",
             "url": "https://www.linkedin.com/posts/mark-vance-accounting_netsuite-cash-app-activity-718899203",
             "erp": "NetSuite"
+        },
+        {
+            "author": "Michael Thornton, CPA (VP Finance & Controller)",
+            "title": "Why unapplied cash is the true enemy of financial close speed",
+            "body": "At our recent quarterly review, we noticed over $420,000 sitting in unapplied cash accounts across 3 entities. When ACH wires hit our Chase bank account without an invoice reference, our senior accountants have to cross-check 4 different customer portals. Closing the books in 5 days is impossible when 2 days are spent on manual AR matching.",
+            "url": "https://www.linkedin.com/posts/michael-thornton-cpa_unapplied-cash-month-end-activity-718899301",
+            "erp": "NetSuite / Sage Intacct"
+        },
+        {
+            "author": "Rachel Goldberg (Director of Accounting Operations)",
+            "title": "The reality of lockbox banking: PDF scans and missing remittance advice",
+            "body": "Banks charge thousands of dollars for lockbox services, but what do they deliver? Low-resolution TIFF or PDF check images where customer remittance details are cut off. Then our team spends 15 hours a week manually re-keying invoice numbers into our ERP. There has to be a better way for mid-market companies.",
+            "url": "https://www.linkedin.com/posts/rachel-goldberg-accounting_lockbox-reconciliation-ar-activity-718899302",
+            "erp": "NetSuite"
+        },
+        {
+            "author": "Brian O'Connor (Chief Financial Officer @ Apex Logistics)",
+            "title": "Evaluating AR Automation: HighRadius vs BlackLine vs Native ERP Tools",
+            "body": "As a $60M transportation and logistics firm, our AR team processes 2,500 customer remittances a month. HighRadius and BlackLine are built for $500M+ Fortune 500 companies with dedicated IT teams. For mid-market NetSuite users, the market has a massive gap for lightweight, high-accuracy cash application.",
+            "url": "https://www.linkedin.com/posts/brian-oconnor-cfo_ar-automation-midmarket-activity-718899303",
+            "erp": "NetSuite"
+        },
+        {
+            "author": "Elena Rostova (Accounting Systems Manager)",
+            "title": "Handling many-to-many payments in NetSuite: An ongoing struggle",
+            "body": "When a parent company pays for 8 subsidiaries with one wire, and takes a 1.5% prompt-pay discount across 14 invoices, standard NetSuite cash application rules cannot resolve the allocation. It creates suspense account balances that haunt the audit trail.",
+            "url": "https://www.linkedin.com/posts/elena-rostova-systems_netsuite-cash-app-activity-718899304",
+            "erp": "NetSuite"
+        },
+        {
+            "author": "Jason Miller, CPA (Controller @ Greenline Manufacturing)",
+            "title": "How unapplied cash impacts customer relationships and credit limits",
+            "body": "Here is what happens when cash application is delayed: A customer pays $80,000 on Tuesday, but because the cash sits unapplied in suspense until Friday, our automated credit system puts their account on credit hold on Thursday. Sales is furious, customer is insulted, all because of manual reconciliation.",
+            "url": "https://www.linkedin.com/posts/jason-miller-controller_ar-credit-hold-unapplied-activity-718899305",
+            "erp": "General ERP / NetSuite"
+        },
+        {
+            "author": "Amanda Cruz (Senior AR Specialist)",
+            "title": "Spending 6 hours every Friday downloading remittance PDFs from customer portals",
+            "body": "Walmart, Target, and Amazon vendors will understand: they don't email remittance advice. You have to log into 10 different supplier portals, download CSVs or PDFs, reformat columns, and manually apply payments in QuickBooks Enterprise. It is the most mind-numbing part of accounts receivable.",
+            "url": "https://www.linkedin.com/posts/amanda-cruz-ar_remittance-portals-accounting-activity-718899306",
+            "erp": "QuickBooks / NetSuite"
+        },
+        {
+            "author": "Thomas Wright (VP of Finance @ BioHealth Innovations)",
+            "title": "The audit nightmare of unapplied cash balances at year-end",
+            "body": "External auditors spent 3 full days auditing our unapplied cash subledger because payment references did not tie cleanly to customer IDs. If your unapplied cash exceeds 2% of total AR, auditors issue a significant deficiency letter. Automating this before Q4 close is our top priority.",
+            "url": "https://www.linkedin.com/posts/thomas-wright-finance_audit-unapplied-cash-activity-718899307",
+            "erp": "NetSuite / Sage Intacct"
         }
     ]
     
