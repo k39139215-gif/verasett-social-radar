@@ -66,35 +66,42 @@ class MultiProxyRotator:
     """
     Manages multi-provider free proxy rotation with automatic failover.
     Pools free tiers together:
-    - ScraperAPI: 5,000 free/mo
+    - ScraperAPI Key 1: 5,000 free/mo
+    - ScraperAPI Key 2: 5,000 free/mo
     - ScrapingAnt: 10,000 free/mo
     - ZenRows: 1,000 free/mo
-    Total Free Pool: ~16,000 requests/mo (100% Free 24/7)
+    Total Free Pool: ~21,000 requests/mo (100% Free 24/7)
     """
     def __init__(self):
-        self.providers = []
+        # Collect all ScraperAPI keys
+        self.scraper_keys = []
+        for env_var in ['SCRAPER_API_KEY', 'SCRAPER_API_KEY_2', 'SCRAPER_API_KEY_3']:
+            val = os.environ.get(env_var)
+            if val and val.strip():
+                self.scraper_keys.append(val.strip())
+        self.active_scraper_idx = 0
         
-        # 1. ScraperAPI
-        scraper_key = os.environ.get('SCRAPER_API_KEY')
-        if scraper_key:
+        self.providers = []
+        for idx, key in enumerate(self.scraper_keys, 1):
             self.providers.append({
-                'name': 'ScraperAPI',
-                'url_builder': lambda u, r: f"http://api.scraperapi.com?api_key={scraper_key}&url={urllib.parse.quote(u)}" + ("&render=true" if r else "")
+                'name': f'ScraperAPI-Acc{idx}',
+                'key': key,
+                'url_builder': lambda u, r, k=key: f"http://api.scraperapi.com?api_key={k}&url={urllib.parse.quote(u)}" + ("&render=true" if r else "")
             })
             
-        # 2. ScrapingAnt
         scrapingant_key = os.environ.get('SCRAPINGANT_API_KEY')
         if scrapingant_key:
             self.providers.append({
                 'name': 'ScrapingAnt',
+                'key': scrapingant_key,
                 'url_builder': lambda u, r: f"https://api.scrapingant.com/v2/general?x-api-key={scrapingant_key}&url={urllib.parse.quote(u)}" + ("&browser=true" if r else "")
             })
             
-        # 3. ZenRows
         zenrows_key = os.environ.get('ZENROWS_API_KEY')
         if zenrows_key:
             self.providers.append({
                 'name': 'ZenRows',
+                'key': zenrows_key,
                 'url_builder': lambda u, r: f"https://api.zenrows.com/v1/?apikey={zenrows_key}&url={urllib.parse.quote(u)}" + ("&js_render=true" if r else "")
             })
             
@@ -104,12 +111,30 @@ class MultiProxyRotator:
     def is_active(self) -> bool:
         return len(self.providers) > 0
 
+    def get_playwright_proxy_config(self) -> Optional[dict]:
+        """Returns Playwright proxy configuration for the current active ScraperAPI key."""
+        available_keys = [k for k in self.scraper_keys if k not in self.exhausted]
+        if not available_keys:
+            return None
+        current_key = available_keys[self.active_scraper_idx % len(available_keys)]
+        return {
+            'server': 'http://proxy-server.scraperapi.com:8001',
+            'username': 'scraperapi',
+            'password': current_key
+        }
+
+    def rotate_key(self, failed_key_or_name: str):
+        """Marks a key or provider exhausted and rotates to the next."""
+        print(f"[ROTATOR] Quota hit or failure for {failed_key_or_name}. Rotating to next available key...", flush=True)
+        self.exhausted.add(failed_key_or_name)
+        self.active_scraper_idx += 1
+
     def fetch(self, target_url: str, render: bool = True) -> Optional[str]:
         if not self.providers:
             return None
             
         for p in self.providers:
-            if p['name'] in self.exhausted:
+            if p['name'] in self.exhausted or p.get('key') in self.exhausted:
                 continue
                 
             api_endpoint = p['url_builder'](target_url, render)
@@ -120,14 +145,16 @@ class MultiProxyRotator:
                         return resp.read().decode('utf-8', errors='ignore')
             except urllib.error.HTTPError as he:
                 if he.code in (429, 403, 401):
-                    print(f"[ROTATOR] {p['name']} quota hit or unauthorized ({he.code}). Auto-rotating to next provider...", flush=True)
-                    self.exhausted.add(p['name'])
+                    self.rotate_key(p['name'])
+                    if p.get('key'):
+                        self.exhausted.add(p['key'])
                 else:
                     print(f"[ROTATOR] {p['name']} HTTP error ({he.code}) for {target_url}", flush=True)
             except Exception as e:
-                print(f"[ROTATOR] {p['name']} connection error: {e}", flush=True)
+                print(f"[ROTATOR] {p['name']} error: {e}", flush=True)
                 
         return None
+
 
 ROTATOR = MultiProxyRotator()
 
@@ -275,44 +302,21 @@ def scan_reddit() -> List[SocialLead]:
     existing_urls = get_existing_urls(PLATFORM_FILES['reddit'])
     post_urls_to_read = []
     
-    # Cloud Mode: If SCRAPER_API_KEY is available, use rotating residential proxies
-    if SCRAPER_API_KEY:
-        print("Using ScraperAPI residential proxy pipeline for 24/7 Cloud...", flush=True)
-        for sub, q in reddit_searches:
-            search_url = f"https://www.reddit.com/r/{sub}/search/?q={urllib.parse.quote(q)}&sort=new"
-            html = fetch_via_scraperapi(search_url, render=True)
-            if html:
-                soup = BeautifulSoup(html, 'html.parser')
-                for a in soup.find_all('a', href=True):
-                    href = a['href']
-                    if '/comments/' in href:
-                        clean = href.split('?')[0]
-                        full_url = f"https://www.reddit.com{clean}" if clean.startswith('/') else clean
-                        if full_url not in existing_urls and full_url not in post_urls_to_read:
-                            post_urls_to_read.append(full_url)
-                            
-        print(f"Cloud ScraperAPI discovered {len(post_urls_to_read)} candidates to deep read.", flush=True)
-        for post_url in post_urls_to_read[:8]:
-            html = fetch_via_scraperapi(post_url, render=False)
-            if html:
-                soup = BeautifulSoup(html, 'html.parser')
-                h1 = soup.find('h1')
-                title = h1.get_text().strip() if h1 else ""
-                texts = [p.get_text().strip() for p in soup.find_all(['p', 'div']) if len(p.get_text().strip()) > 30]
-                full_body = " ".join(texts[:10])
-                lead = evaluate_content(title=title, body=full_body, platform="Reddit", url=post_url)
-                if lead and lead.pain_severity_score >= 6:
-                    leads.append(lead)
-        return leads
-
-    
     try:
         from playwright.sync_api import sync_playwright
         with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
-            page = browser.new_page(
-                user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
+            proxy_cfg = ROTATOR.get_playwright_proxy_config()
+            launch_kwargs = {'headless': True}
+            if proxy_cfg:
+                print(f"[RADAR] Launching Chromium with Rotating Residential Proxy ({proxy_cfg['password'][:6]}...)", flush=True)
+                launch_kwargs['proxy'] = proxy_cfg
+                
+            browser = p.chromium.launch(**launch_kwargs)
+            context = browser.new_context(
+                user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+                ignore_https_errors=True
             )
+            page = context.new_page()
             
             existing_urls = get_existing_urls(PLATFORM_FILES['reddit'])
             post_urls_to_read = []
