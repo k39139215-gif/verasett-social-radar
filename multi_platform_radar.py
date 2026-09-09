@@ -220,6 +220,7 @@ class MultiProxyRotator:
                                 except Exception:
                                     pass
                             resolved_results.append(r)
+                        self.active_scraper_idx += 1
                         return resolved_results
             except urllib.error.HTTPError as he:
                 if he.code in (429, 403, 401):
@@ -456,8 +457,7 @@ def scan_reddit() -> List[SocialLead]:
     ]
     cycle_hash = int(time.time() // 600)
     selected_queries = [
-        r_queries[cycle_hash % len(r_queries)],
-        r_queries[(cycle_hash + 1) % len(r_queries)]
+        r_queries[cycle_hash % len(r_queries)]
     ]
     
     existing_reddit_urls = get_existing_urls(PLATFORM_FILES['reddit'])
@@ -584,8 +584,7 @@ def scan_twitter_discussions() -> List[SocialLead]:
         ]
         cycle_hash = int(time.time() // 600)
         selected_queries = [
-            tw_queries[cycle_hash % len(tw_queries)],
-            tw_queries[(cycle_hash + 1) % len(tw_queries)]
+            tw_queries[cycle_hash % len(tw_queries)]
         ]
         for q in selected_queries:
             results = ROTATOR.search_google(q, max_items=10)
@@ -761,8 +760,7 @@ def scan_linkedin_discussions() -> List[SocialLead]:
         ]
         cycle_hash = int(time.time() // 600)
         selected_queries = [
-            li_queries[cycle_hash % len(li_queries)],
-            li_queries[(cycle_hash + 1) % len(li_queries)]
+            li_queries[cycle_hash % len(li_queries)]
         ]
         for q in selected_queries:
             results = ROTATOR.search_google(q, max_items=10)
