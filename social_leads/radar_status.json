@@ -1,0 +1,16 @@
+{
+  "last_active_timestamp": "2026-09-09 19:21:02",
+  "radar_daemon_status": "RUNNING_ACTIVE",
+  "cycle_interval_seconds": 600,
+  "total_verified_leads": 186,
+  "lead_counts": {
+    "reddit_leads.csv": 75,
+    "twitter_leads.csv": 35,
+    "linkedin_leads.csv": 72,
+    "producthunt_leads.csv": 4
+  },
+  "api_health": {
+    "scraperapi_pool": "ONLINE (9,200+ free requests available)",
+    "apify": "FREE_QUOTA_EXHAUSTED (Auto-failed over to ScraperAPI Google Live Search)"
+  }
+}
