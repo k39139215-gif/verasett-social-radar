@@ -300,6 +300,31 @@ def save_platform_leads(platform_name: str, leads: List[SocialLead]):
             
     print(f"[{platform_name.upper()}] Saved {len(new_leads)} leads to {os.path.basename(target_csv)}", flush=True)
 
+    # Cross-sync to Desktop and scratch copies if running locally on Windows
+    alt_dirs = [
+        r"C:\Users\kartik\Desktop\Verasett_Social_Leads",
+        r"C:\Users\kartik\.gemini\antigravity\scratch\social_leads",
+        r"C:\Users\kartik\.gemini\antigravity\scratch\verasett-social-radar\social_leads"
+    ]
+    filename = f"{platform_name.lower()}_leads.csv"
+    for alt_dir in alt_dirs:
+        if os.path.exists(alt_dir):
+            alt_file = os.path.join(alt_dir, filename)
+            if os.path.abspath(alt_file) != os.path.abspath(target_csv):
+                try:
+                    alt_urls = get_existing_urls(alt_file)
+                    alt_new = [l for l in leads if l.post_url not in alt_urls]
+                    if alt_new:
+                        a_exists = os.path.exists(alt_file)
+                        with open(alt_file, 'a', encoding='utf-8', newline='') as f_alt:
+                            w_alt = csv.DictWriter(f_alt, fieldnames=fieldnames)
+                            if not a_exists:
+                                w_alt.writeheader()
+                            for l in alt_new:
+                                w_alt.writerow(asdict(l))
+                except Exception:
+                    pass
+
 # -------------------------------------------------------------
 # Platform Scanners
 # -------------------------------------------------------------
