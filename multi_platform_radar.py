@@ -440,130 +440,44 @@ def save_platform_leads(platform_name: str, leads: List[SocialLead]):
 # -------------------------------------------------------------
 
 def scan_reddit() -> List[SocialLead]:
-    """Scans Reddit subreddits using Playwright (locally) or ScraperAPI (in cloud)."""
-    print("Scanning Reddit discussions live...", flush=True)
+    """Scans Reddit finance & accounting discussions using ScraperAPI Google Search."""
+    print("Scanning Reddit discussions live via ScraperAPI Google...", flush=True)
     leads = []
     
-    reddit_searches = [
-        ('NetSuite', 'unapplied cash'),
-        ('NetSuite', 'remittance advice'),
-        ('NetSuite', 'lockbox'),
-        ('NetSuite', 'cash application'),
-        ('NetSuite', 'bank reconciliation'),
-        ('NetSuite', 'customer deposit'),
-        ('Accounting', 'unapplied cash'),
-        ('Accounting', 'cash application'),
-        ('Accounting', 'lockbox'),
-        ('Accounting', 'remittance'),
-        ('Accounting', 'short pay'),
-        ('Accounting', 'suspense account'),
-        ('Accounting', 'payment reconciliation'),
-        ('Bookkeeping', 'unapplied cash'),
-        ('Bookkeeping', 'bank reconciliation'),
-        ('Bookkeeping', 'undeposited funds'),
-        ('quickbooks', 'unapplied payment'),
-        ('quickbooks', 'bank reconciliation'),
-        ('ERP', 'cash application'),
-        ('ERP', 'unapplied cash'),
-        ('ERP', 'lockbox BAI2')
+    r_queries = [
+        'site:reddit.com/r/NetSuite "unapplied cash"',
+        'site:reddit.com/r/Accounting "unapplied cash" OR "remittance advice"',
+        'site:reddit.com/r/NetSuite "bank reconciliation" lockbox',
+        'site:reddit.com/r/Accounting "cash application" automation',
+        'site:reddit.com/r/Bookkeeping "unapplied deposit" OR "undeposited funds"',
+        'site:reddit.com/r/NetSuite "short pay" deduction',
+        'site:reddit.com/r/Accounting "bank rec" nightmare',
+        'site:reddit.com/r/ERP "unapplied cash" OR "cash application"'
+    ]
+    cycle_hash = int(time.time() // 600)
+    selected_queries = [
+        r_queries[cycle_hash % len(r_queries)],
+        r_queries[(cycle_hash + 1) % len(r_queries)]
     ]
     
-    existing_urls = get_existing_urls(PLATFORM_FILES['reddit'])
-    post_urls_to_read = []
-    
-    try:
-        from playwright.sync_api import sync_playwright
-        with sync_playwright() as p:
-            proxy_cfg = ROTATOR.get_playwright_proxy_config()
-            launch_kwargs = {'headless': True}
-            if proxy_cfg:
-                print(f"[RADAR] Launching Chromium with Rotating Residential Proxy ({proxy_cfg['password'][:6]}...)", flush=True)
-                launch_kwargs['proxy'] = proxy_cfg
-                
-            browser = p.chromium.launch(**launch_kwargs)
-            context = browser.new_context(
-                user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-                ignore_https_errors=True
-            )
-            page = context.new_page()
-            
-            existing_urls = get_existing_urls(PLATFORM_FILES['reddit'])
-            evaluated_urls = get_evaluated_urls()
-            already_seen = existing_urls | evaluated_urls
-            post_urls_to_read = []
-            
-            for sub, q in reddit_searches:
-                search_url = f"https://www.reddit.com/r/{sub}/search/?q={urllib.parse.quote(q)}&sort=new"
-                try:
-                    page.goto(search_url, timeout=15000, wait_until="domcontentloaded")
-                    page.wait_for_timeout(2000)
-                    links = page.locator('a[href*="/comments/"]').all()
-                    for l in links:
-                        href = l.get_attribute('href')
-                        if href and '/comments/' in href:
-                            clean_href = href.split('?')[0]
-                            full_url = f"https://www.reddit.com{clean_href}" if clean_href.startswith('/') else clean_href
-                            if full_url not in already_seen and full_url not in post_urls_to_read:
-                                post_urls_to_read.append(full_url)
-                except Exception as e:
-                    print(f"  Error querying r/{sub} for '{q}': {e}", flush=True)
-                    
-            print(f"Found {len(post_urls_to_read)} fresh un-evaluated Reddit candidate threads...", flush=True)
-            
-            for post_url in post_urls_to_read[:15]: # Deep read top 15 fresh candidates per cycle
-                mark_url_evaluated(post_url)
-                try:
-                    page.goto(post_url, timeout=15000, wait_until="domcontentloaded")
-                    page.wait_for_timeout(2000)
-                    
-                    h1_els = page.locator('h1').all_text_contents()
-                    title = h1_els[0].strip() if h1_els else page.title()
-                    
-                    # Extract deep post body
-                    body_els = page.locator('div[slot="text-body"], shreddit-post div.text-neutral-content, p').all_text_contents()
-                    full_body = " ".join([b.strip() for b in body_els if len(b.strip()) > 25])
-                    
-                    author_els = page.locator('a[href*="/user/"]').all_text_contents()
-                    author = author_els[0].strip() if author_els else "Reddit User"
-                    
-                    lead = evaluate_content(title=title, body=full_body, platform="Reddit", url=post_url, author=author)
-                    if lead and lead.pain_severity_score >= 6:
-                        leads.append(lead)
-                        print(f"  [Reddit Qualified] ({lead.pain_severity_score}/10) {lead.post_title[:65]}...", flush=True)
-                except Exception as e:
-                    print(f"  Error reading post {post_url}: {e}", flush=True)
-                    
-            browser.close()
-    except Exception as e:
-        print(f"Reddit scanner error: {e}", flush=True)
-        
-    # Supplemental ScraperAPI Google Search for Reddit threads
-    try:
-        print("[Reddit] Querying high-intent Reddit threads via ScraperAPI Google...", flush=True)
-        r_queries = [
-            'site:reddit.com/r/NetSuite "unapplied cash"',
-            'site:reddit.com/r/Accounting "unapplied cash" OR "remittance advice"',
-            'site:reddit.com/r/NetSuite "bank reconciliation" lockbox',
-            'site:reddit.com/r/Accounting "cash application" automation',
-            'site:reddit.com/r/Bookkeeping "unapplied deposit" OR "undeposited funds"',
-            'site:reddit.com/r/NetSuite "short pay" deduction'
-        ]
-        cycle_hash = int(time.time() // 600)
-        selected_rq = r_queries[cycle_hash % len(r_queries)]
-        r_results = ROTATOR.search_google(selected_rq, max_items=10)
-        existing_reddit_urls = get_existing_urls(PLATFORM_FILES['reddit'])
-        for res in r_results:
-            u = res.get('link', '')
-            if '/comments/' in u and u not in existing_reddit_urls:
-                t = res.get('title', '').replace(' - Reddit', '').replace(' : r/NetSuite', '').replace(' : r/Accounting', '')
-                s = res.get('snippet', '')
-                r_lead = evaluate_content(title=t, body=s, platform="Reddit", url=u, author="Reddit User")
-                if r_lead and r_lead.pain_severity_score >= 6:
-                    leads.append(r_lead)
-                    print(f"  [Reddit via Google Qualified] ({r_lead.pain_severity_score}/10) {r_lead.post_title[:60]}...", flush=True)
-                mark_url_evaluated(u)
-    except Exception as e:
-        print(f"  Reddit Google search error: {e}", flush=True)
+    existing_reddit_urls = get_existing_urls(PLATFORM_FILES['reddit'])
+    evaluated_urls = get_evaluated_urls()
+    for q in selected_queries:
+        try:
+            print(f"  Querying: {q}", flush=True)
+            r_results = ROTATOR.search_google(q, max_items=10)
+            for res in r_results:
+                u = res.get('link', '')
+                if '/comments/' in u and u not in existing_reddit_urls and u not in evaluated_urls:
+                    t = res.get('title', '').replace(' - Reddit', '').replace(' : r/NetSuite', '').replace(' : r/Accounting', '').replace(' : r/Bookkeeping', '')
+                    s = res.get('snippet', '')
+                    r_lead = evaluate_content(title=t, body=s, platform="Reddit", url=u, author="Reddit User")
+                    if r_lead and r_lead.pain_severity_score >= 6:
+                        leads.append(r_lead)
+                        print(f"  [Reddit Qualified] ({r_lead.pain_severity_score}/10) {r_lead.post_title[:60]}...", flush=True)
+                    mark_url_evaluated(u)
+        except Exception as e:
+            print(f"  Reddit Google search error: {e}", flush=True)
 
     return leads
 
