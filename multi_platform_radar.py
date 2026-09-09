@@ -352,7 +352,7 @@ def scan_reddit() -> List[SocialLead]:
             for sub, q in reddit_searches:
                 search_url = f"https://www.reddit.com/r/{sub}/search/?q={urllib.parse.quote(q)}&sort=new"
                 try:
-                    page.goto(search_url, timeout=20000)
+                    page.goto(search_url, timeout=15000, wait_until="domcontentloaded")
                     page.wait_for_timeout(2000)
                     links = page.locator('a[href*="/comments/"]').all()
                     for l in links:
@@ -370,7 +370,7 @@ def scan_reddit() -> List[SocialLead]:
             for post_url in post_urls_to_read[:15]: # Deep read top 15 fresh candidates per cycle
                 mark_url_evaluated(post_url)
                 try:
-                    page.goto(post_url, timeout=20000)
+                    page.goto(post_url, timeout=15000, wait_until="domcontentloaded")
                     page.wait_for_timeout(2000)
                     
                     h1_els = page.locator('h1').all_text_contents()
