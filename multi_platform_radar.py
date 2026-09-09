@@ -179,18 +179,24 @@ def save_platform_leads(platform_name: str, leads: List[SocialLead]):
 # -------------------------------------------------------------
 
 def scan_reddit() -> List[SocialLead]:
-    """Scans Reddit subreddits (r/NetSuite, r/Accounting, r/Bookkeeping) using Playwright."""
-    print("Scanning Reddit discussions...", flush=True)
+    """Scans Reddit subreddits using Playwright across full query matrix."""
+    print("Scanning Reddit discussions live...", flush=True)
     leads = []
     
     reddit_searches = [
         ('NetSuite', 'unapplied cash'),
         ('NetSuite', 'remittance advice'),
-        ('NetSuite', 'lockbox automation'),
-        ('NetSuite', 'bank reconciliation journal'),
-        ('Accounting', 'unapplied cash reconciliation'),
-        ('Accounting', 'cash application match'),
-        ('Bookkeeping', 'unapplied cash')
+        ('NetSuite', 'lockbox'),
+        ('NetSuite', 'cash application'),
+        ('NetSuite', 'bank reconciliation'),
+        ('Accounting', 'unapplied cash'),
+        ('Accounting', 'cash application'),
+        ('Accounting', 'lockbox'),
+        ('Accounting', 'remittance'),
+        ('Bookkeeping', 'unapplied cash'),
+        ('Bookkeeping', 'bank reconciliation'),
+        ('ERP', 'cash application'),
+        ('ERP', 'unapplied cash')
     ]
     
     try:
@@ -207,7 +213,7 @@ def scan_reddit() -> List[SocialLead]:
             for sub, q in reddit_searches:
                 search_url = f"https://www.reddit.com/r/{sub}/search/?q={urllib.parse.quote(q)}&sort=new"
                 try:
-                    page.goto(search_url, timeout=15000)
+                    page.goto(search_url, timeout=20000)
                     page.wait_for_timeout(2000)
                     links = page.locator('a[href*="/comments/"]').all()
                     for l in links:
@@ -220,22 +226,22 @@ def scan_reddit() -> List[SocialLead]:
                 except Exception as e:
                     print(f"  Error querying r/{sub} for '{q}': {e}", flush=True)
                     
-            print(f"Found {len(post_urls_to_read)} new Reddit threads to deep read...", flush=True)
+            print(f"Found {len(post_urls_to_read)} new Reddit candidate threads to deep read...", flush=True)
             
-            for post_url in post_urls_to_read[:6]: # Deep read top 6 fresh candidates per cycle
+            for post_url in post_urls_to_read[:10]: # Deep read top 10 fresh candidates per cycle
                 try:
-                    page.goto(post_url, timeout=15000)
+                    page.goto(post_url, timeout=20000)
                     page.wait_for_timeout(2000)
                     
-                    title_el = page.locator('h1').first
-                    title = title_el.text_content().strip() if title_el.count() > 0 else page.title()
+                    h1_els = page.locator('h1').all_text_contents()
+                    title = h1_els[0].strip() if h1_els else page.title()
                     
                     # Extract deep post body
-                    body_els = page.locator('div[slot="text-body"], shreddit-post div.text-neutral-content, p').all()
-                    full_body = " ".join([b.text_content().strip() for b in body_els if len(b.text_content().strip()) > 30])
+                    body_els = page.locator('div[slot="text-body"], shreddit-post div.text-neutral-content, p').all_text_contents()
+                    full_body = " ".join([b.strip() for b in body_els if len(b.strip()) > 25])
                     
-                    author_el = page.locator('a[href*="/user/"]').first
-                    author = author_el.text_content().strip() if author_el.count() > 0 else "Reddit User"
+                    author_els = page.locator('a[href*="/user/"]').all_text_contents()
+                    author = author_els[0].strip() if author_els else "Reddit User"
                     
                     lead = evaluate_content(title=title, body=full_body, platform="Reddit", url=post_url, author=author)
                     if lead and lead.pain_severity_score >= 6:
