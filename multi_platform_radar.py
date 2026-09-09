@@ -245,6 +245,32 @@ def get_existing_urls(filepath: str) -> Set[str]:
             print(f"Warning reading existing URLs from {filepath}: {e}", flush=True)
     return urls
 
+EVALUATED_CACHE_FILE = os.path.join(BASE_STORAGE_DIR, 'evaluated_urls.txt')
+
+def get_evaluated_urls() -> Set[str]:
+    """Reads URLs that were already evaluated and rejected to avoid re-evaluating them in an infinite loop."""
+    seen = set()
+    if os.path.exists(EVALUATED_CACHE_FILE):
+        try:
+            with open(EVALUATED_CACHE_FILE, 'r', encoding='utf-8') as f:
+                for line in f:
+                    u = line.strip()
+                    if u:
+                        seen.add(u)
+        except Exception:
+            pass
+    return seen
+
+def mark_url_evaluated(url: str):
+    """Persists evaluated URL to cache."""
+    try:
+        os.makedirs(BASE_STORAGE_DIR, exist_ok=True)
+        with open(EVALUATED_CACHE_FILE, 'a', encoding='utf-8') as f:
+            f.write(url.strip() + '\n')
+    except Exception:
+        pass
+
+
 def save_platform_leads(platform_name: str, leads: List[SocialLead]):
     """Appends evaluated leads to their platform-specific CSV file."""
     if not leads:
@@ -319,6 +345,8 @@ def scan_reddit() -> List[SocialLead]:
             page = context.new_page()
             
             existing_urls = get_existing_urls(PLATFORM_FILES['reddit'])
+            evaluated_urls = get_evaluated_urls()
+            already_seen = existing_urls | evaluated_urls
             post_urls_to_read = []
             
             for sub, q in reddit_searches:
@@ -332,14 +360,15 @@ def scan_reddit() -> List[SocialLead]:
                         if href and '/comments/' in href:
                             clean_href = href.split('?')[0]
                             full_url = f"https://www.reddit.com{clean_href}" if clean_href.startswith('/') else clean_href
-                            if full_url not in existing_urls and full_url not in post_urls_to_read:
+                            if full_url not in already_seen and full_url not in post_urls_to_read:
                                 post_urls_to_read.append(full_url)
                 except Exception as e:
                     print(f"  Error querying r/{sub} for '{q}': {e}", flush=True)
                     
-            print(f"Found {len(post_urls_to_read)} new Reddit candidate threads to deep read...", flush=True)
+            print(f"Found {len(post_urls_to_read)} fresh un-evaluated Reddit candidate threads...", flush=True)
             
-            for post_url in post_urls_to_read[:10]: # Deep read top 10 fresh candidates per cycle
+            for post_url in post_urls_to_read[:15]: # Deep read top 15 fresh candidates per cycle
+                mark_url_evaluated(post_url)
                 try:
                     page.goto(post_url, timeout=20000)
                     page.wait_for_timeout(2000)
