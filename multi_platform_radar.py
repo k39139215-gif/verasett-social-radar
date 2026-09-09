@@ -62,22 +62,78 @@ EXCLUDE_NOISE = [
     'crypto', 'bitcoin', 'dropshipping', 'discord nitro'
 ]
 
-SCRAPER_API_KEY = os.environ.get('SCRAPER_API_KEY')
+class MultiProxyRotator:
+    """
+    Manages multi-provider free proxy rotation with automatic failover.
+    Pools free tiers together:
+    - ScraperAPI: 5,000 free/mo
+    - ScrapingAnt: 10,000 free/mo
+    - ZenRows: 1,000 free/mo
+    Total Free Pool: ~16,000 requests/mo (100% Free 24/7)
+    """
+    def __init__(self):
+        self.providers = []
+        
+        # 1. ScraperAPI
+        scraper_key = os.environ.get('SCRAPER_API_KEY')
+        if scraper_key:
+            self.providers.append({
+                'name': 'ScraperAPI',
+                'url_builder': lambda u, r: f"http://api.scraperapi.com?api_key={scraper_key}&url={urllib.parse.quote(u)}" + ("&render=true" if r else "")
+            })
+            
+        # 2. ScrapingAnt
+        scrapingant_key = os.environ.get('SCRAPINGANT_API_KEY')
+        if scrapingant_key:
+            self.providers.append({
+                'name': 'ScrapingAnt',
+                'url_builder': lambda u, r: f"https://api.scrapingant.com/v2/general?x-api-key={scrapingant_key}&url={urllib.parse.quote(u)}" + ("&browser=true" if r else "")
+            })
+            
+        # 3. ZenRows
+        zenrows_key = os.environ.get('ZENROWS_API_KEY')
+        if zenrows_key:
+            self.providers.append({
+                'name': 'ZenRows',
+                'url_builder': lambda u, r: f"https://api.zenrows.com/v1/?apikey={zenrows_key}&url={urllib.parse.quote(u)}" + ("&js_render=true" if r else "")
+            })
+            
+        self.exhausted = set()
+        print(f"[ROTATOR] Initialized with {len(self.providers)} active proxy provider(s): {[p['name'] for p in self.providers]}", flush=True)
+
+    def is_active(self) -> bool:
+        return len(self.providers) > 0
+
+    def fetch(self, target_url: str, render: bool = True) -> Optional[str]:
+        if not self.providers:
+            return None
+            
+        for p in self.providers:
+            if p['name'] in self.exhausted:
+                continue
+                
+            api_endpoint = p['url_builder'](target_url, render)
+            req = urllib.request.Request(api_endpoint, headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'})
+            try:
+                with urllib.request.urlopen(req, timeout=35) as resp:
+                    if resp.status == 200:
+                        return resp.read().decode('utf-8', errors='ignore')
+            except urllib.error.HTTPError as he:
+                if he.code in (429, 403, 401):
+                    print(f"[ROTATOR] {p['name']} quota hit or unauthorized ({he.code}). Auto-rotating to next provider...", flush=True)
+                    self.exhausted.add(p['name'])
+                else:
+                    print(f"[ROTATOR] {p['name']} HTTP error ({he.code}) for {target_url}", flush=True)
+            except Exception as e:
+                print(f"[ROTATOR] {p['name']} connection error: {e}", flush=True)
+                
+        return None
+
+ROTATOR = MultiProxyRotator()
 
 def fetch_via_scraperapi(url: str, render: bool = True) -> Optional[str]:
-    """Fetches URL via ScraperAPI rotating residential proxies to bypass cloud datacenter blocks."""
-    if not SCRAPER_API_KEY:
-        return None
-    api_url = f"http://api.scraperapi.com?api_key={SCRAPER_API_KEY}&url={urllib.parse.quote(url)}"
-    if render:
-        api_url += "&render=true"
-    req = urllib.request.Request(api_url, headers={'User-Agent': 'Mozilla/5.0'})
-    try:
-        with urllib.request.urlopen(req, timeout=35) as resp:
-            return resp.read().decode('utf-8', errors='ignore')
-    except Exception as e:
-        print(f"ScraperAPI error for {url}: {e}", flush=True)
-        return None
+    """Delegates to the MultiProxyRotator."""
+    return ROTATOR.fetch(url, render)
 
 @dataclass
 class SocialLead:
