@@ -432,10 +432,51 @@ def scan_producthunt() -> List[SocialLead]:
         
     return leads
 
+APIFY_TOKEN = os.environ.get('APIFY_TOKEN')
+
 def scan_twitter_discussions() -> List[SocialLead]:
-    """Scans Twitter/X discussions on cash reconciliation and month-end close."""
+    """Scans Twitter/X discussions using Apify Tweet Scraper or fallback pool."""
     print("Scanning Twitter / X discussions...", flush=True)
     leads = []
+    
+    if APIFY_TOKEN:
+        try:
+            from apify_client import ApifyClient
+            client = ApifyClient(APIFY_TOKEN)
+            existing_urls = get_existing_urls(PLATFORM_FILES['twitter'])
+            
+            run_input = {
+                "searchTerms": [
+                    "unapplied cash",
+                    "remittance advice",
+                    "lockbox NetSuite",
+                    "cash application automation"
+                ],
+                "maxTweets": 20,
+                "sort": "Latest"
+            }
+            print("[APIFY] Launching Twitter/X Actor (apidojo/tweet-scraper)...", flush=True)
+            run = client.actor("apidojo/tweet-scraper").call(run_input=run_input, timeout_secs=90)
+            items = list(client.dataset(run["defaultDatasetId"]).iterate_items())
+            print(f"[APIFY] Fetched {len(items)} tweets from Twitter/X.", flush=True)
+            
+            for item in items:
+                text = item.get("text") or item.get("full_text") or ""
+                url = item.get("url") or item.get("twitterUrl") or ""
+                user_info = item.get("author") if isinstance(item.get("author"), dict) else {}
+                author = item.get("userName") or user_info.get("userName") or "Twitter User"
+                title = text[:80].replace('\n', ' ')
+                
+                if url and url not in existing_urls:
+                    lead = evaluate_content(title=title, body=text, platform="Twitter", url=url, author=f"@{author}")
+                    if lead and lead.pain_severity_score >= 6:
+                        leads.append(lead)
+                        print(f"  [Twitter Qualified] ({lead.pain_severity_score}/10) {lead.post_title[:60]}...", flush=True)
+            if leads:
+                return leads
+        except Exception as e:
+            print(f"Apify Twitter scanner error: {e}", flush=True)
+
     twitter_signals = [
         {
             "author": "@CFO_ThoughtLeader",
@@ -523,9 +564,51 @@ def scan_twitter_discussions() -> List[SocialLead]:
     return leads
 
 def scan_linkedin_discussions() -> List[SocialLead]:
-    """Scans LinkedIn posts and articles by Corporate Controllers & Accounting Leaders."""
+    """Scans LinkedIn finance & accounting discussions using Apify LinkedIn Post Scraper or fallback benchmark."""
     print("Scanning LinkedIn finance & accounting discussions...", flush=True)
     leads = []
+    
+    if APIFY_TOKEN:
+        try:
+            from apify_client import ApifyClient
+            client = ApifyClient(APIFY_TOKEN)
+            existing_urls = get_existing_urls(PLATFORM_FILES['linkedin'])
+            
+            run_input = {
+                "searchQueries": [
+                    "unapplied cash",
+                    "remittance advice NetSuite",
+                    "lockbox reconciliation",
+                    "cash application automation"
+                ],
+                "maxPosts": 15,
+                "sortBy": "date"
+            }
+            print("[APIFY] Launching LinkedIn Posts Actor (harvestapi/linkedin-post-search)...", flush=True)
+            run = client.actor("harvestapi/linkedin-post-search").call(run_input=run_input, timeout_secs=120)
+            items = list(client.dataset(run["defaultDatasetId"]).iterate_items())
+            print(f"[APIFY] Fetched {len(items)} posts from LinkedIn.", flush=True)
+            
+            for item in items:
+                text = item.get("content") or item.get("text") or item.get("commentary") or ""
+                url = item.get("linkedinUrl") or item.get("shareUrl") or item.get("url") or ""
+                author_info = item.get("author") if isinstance(item.get("author"), dict) else {}
+                author_name = author_info.get("name") or author_info.get("fullName") or f"{author_info.get('firstName', '')} {author_info.get('lastName', '')}".strip() or "LinkedIn Member"
+                author_headline = author_info.get("headline") or ""
+                author = f"{author_name} ({author_headline})" if author_headline else author_name
+                
+                title = text[:80].replace('\n', ' ')
+                
+                if url and url not in existing_urls:
+                    lead = evaluate_content(title=title, body=text, platform="LinkedIn", url=url, author=author)
+                    if lead and lead.pain_severity_score >= 6:
+                        leads.append(lead)
+                        print(f"  [LinkedIn Qualified] ({lead.pain_severity_score}/10) {lead.post_title[:60]}...", flush=True)
+            if leads:
+                return leads
+        except Exception as e:
+            print(f"Apify LinkedIn scanner error: {e}", flush=True)
+
     linkedin_signals = [
         {
             "author": "David Miller, CPA (Corporate Controller)",

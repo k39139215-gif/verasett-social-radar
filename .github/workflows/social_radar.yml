@@ -35,6 +35,7 @@ jobs:
           SCRAPER_API_KEY_2: ${{ secrets.SCRAPER_API_KEY_2 }}
           SCRAPINGANT_API_KEY: ${{ secrets.SCRAPINGANT_API_KEY }}
           ZENROWS_API_KEY: ${{ secrets.ZENROWS_API_KEY }}
+          APIFY_TOKEN: ${{ secrets.APIFY_TOKEN }}
         run: |
           python multi_platform_radar.py --once
 
