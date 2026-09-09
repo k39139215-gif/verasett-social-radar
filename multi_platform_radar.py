@@ -435,7 +435,7 @@ def scan_producthunt() -> List[SocialLead]:
 APIFY_TOKEN = os.environ.get('APIFY_TOKEN')
 
 def scan_twitter_discussions() -> List[SocialLead]:
-    """Scans Twitter/X discussions using Apify Tweet Scraper or fallback pool."""
+    """Scans Twitter/X discussions using Apify Twitter Advanced Search or fallback pool."""
     print("Scanning Twitter / X discussions...", flush=True)
     leads = []
     
@@ -446,29 +446,27 @@ def scan_twitter_discussions() -> List[SocialLead]:
             existing_urls = get_existing_urls(PLATFORM_FILES['twitter'])
             
             run_input = {
-                "searchTerms": [
-                    "unapplied cash",
-                    "remittance advice",
-                    "lockbox NetSuite",
-                    "cash application automation"
-                ],
-                "maxTweets": 20,
-                "sort": "Latest"
+                "query": '"unapplied cash" OR "remittance advice" OR "lockbox" NetSuite lang:en',
+                "numberOfTweets": 20,
+                "search_type": "Latest",
+                "contentLanguage": "en"
             }
-            print("[APIFY] Launching Twitter/X Actor (apidojo/tweet-scraper)...", flush=True)
-            run = client.actor("apidojo/tweet-scraper").call(run_input=run_input)
-            items = list(client.dataset(run["defaultDatasetId"]).iterate_items())
+            print("[APIFY] Launching Twitter/X Actor (api-ninja/x-twitter-advanced-search)...", flush=True)
+            run = client.actor("api-ninja/x-twitter-advanced-search").call(run_input=run_input)
+            dataset_id = getattr(run, "default_dataset_id", None) or (run.get("defaultDatasetId") if isinstance(run, dict) else None)
+            items = list(client.dataset(dataset_id).iterate_items()) if dataset_id else []
             print(f"[APIFY] Fetched {len(items)} tweets from Twitter/X.", flush=True)
             
             for item in items:
                 text = item.get("text") or item.get("full_text") or ""
-                url = item.get("url") or item.get("twitterUrl") or ""
-                user_info = item.get("author") if isinstance(item.get("author"), dict) else {}
-                author = item.get("userName") or user_info.get("userName") or "Twitter User"
+                screen_name = item.get("screen_name") or "TwitterUser"
+                tweet_id = item.get("tweet_id") or ""
+                url = item.get("url") or f"https://x.com/{screen_name}/status/{tweet_id}"
+                author = f"@{screen_name}"
                 title = text[:80].replace('\n', ' ')
                 
                 if url and url not in existing_urls:
-                    lead = evaluate_content(title=title, body=text, platform="Twitter", url=url, author=f"@{author}")
+                    lead = evaluate_content(title=title, body=text, platform="Twitter", url=url, author=author)
                     if lead and lead.pain_severity_score >= 6:
                         leads.append(lead)
                         print(f"  [Twitter Qualified] ({lead.pain_severity_score}/10) {lead.post_title[:60]}...", flush=True)
@@ -586,7 +584,8 @@ def scan_linkedin_discussions() -> List[SocialLead]:
             }
             print("[APIFY] Launching LinkedIn Posts Actor (harvestapi/linkedin-post-search)...", flush=True)
             run = client.actor("harvestapi/linkedin-post-search").call(run_input=run_input)
-            items = list(client.dataset(run["defaultDatasetId"]).iterate_items())
+            dataset_id = getattr(run, "default_dataset_id", None) or (run.get("defaultDatasetId") if isinstance(run, dict) else None)
+            items = list(client.dataset(dataset_id).iterate_items()) if dataset_id else []
             print(f"[APIFY] Fetched {len(items)} posts from LinkedIn.", flush=True)
             
             for item in items:
