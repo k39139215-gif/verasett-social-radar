@@ -35,26 +35,48 @@ PLATFORM_FILES = {
     'producthunt': os.path.join(BASE_STORAGE_DIR, 'producthunt_leads.csv')
 }
 
-# Core Accounting Signals
+# Core Accounting Signals (Expanded for broad coverage)
 RECONCILIATION_SIGNALS = [
     'unapplied cash',
     'remittance',
     'remittance advice',
     'bank reconciliation',
     'reconcile bank',
+    'bank rec',
     'lockbox',
+    'bai2',
     'short pay',
     'payment exception',
     'suspense account',
     'ar matching',
     'cash application',
+    'cash app automation',
     'undeposited funds',
     'highradius',
     'blackline',
-    'celigo'
+    'celigo',
+    'payment allocation',
+    'unapplied deposit',
+    'customer deposit',
+    'edi 820',
+    'ach remittance',
+    'matching rules',
+    'order to cash',
+    'o2c',
+    'dso',
+    'days sales outstanding',
+    'month end close ar',
+    'credit memo deduction',
+    'dispute management',
+    'supplier portal remittance',
+    'payment reconciliation',
+    'auto-match'
 ]
 
-ERP_SIGNALS = ['netsuite', 'sage intacct', 'intacct', 'quickbooks', 'sap', 'workday', 'oracle']
+ERP_SIGNALS = [
+    'netsuite', 'sage intacct', 'intacct', 'quickbooks', 'qbo',
+    'sap', 'workday', 'oracle', 'microsoft dynamics', 'dynamics 365', 'business central'
+]
 
 EXCLUDE_NOISE = [
     'homework', 'cpa exam', 'exam prep', 'meme', 'hiring', 'job opening',
@@ -340,14 +362,22 @@ def scan_reddit() -> List[SocialLead]:
         ('NetSuite', 'lockbox'),
         ('NetSuite', 'cash application'),
         ('NetSuite', 'bank reconciliation'),
+        ('NetSuite', 'customer deposit'),
         ('Accounting', 'unapplied cash'),
         ('Accounting', 'cash application'),
         ('Accounting', 'lockbox'),
         ('Accounting', 'remittance'),
+        ('Accounting', 'short pay'),
+        ('Accounting', 'suspense account'),
+        ('Accounting', 'payment reconciliation'),
         ('Bookkeeping', 'unapplied cash'),
         ('Bookkeeping', 'bank reconciliation'),
+        ('Bookkeeping', 'undeposited funds'),
+        ('quickbooks', 'unapplied payment'),
+        ('quickbooks', 'bank reconciliation'),
         ('ERP', 'cash application'),
-        ('ERP', 'unapplied cash')
+        ('ERP', 'unapplied cash'),
+        ('ERP', 'lockbox BAI2')
     ]
     
     existing_urls = get_existing_urls(PLATFORM_FILES['reddit'])
@@ -422,39 +452,50 @@ def scan_reddit() -> List[SocialLead]:
     return leads
 
 def scan_producthunt() -> List[SocialLead]:
-    """Scans Product Hunt live Atom feed for reconciliation, accounting, and AR tools/makers."""
-    print("Scanning Product Hunt feed...", flush=True)
+    """Scans Product Hunt live Atom feeds (all, fintech, finance, productivity) for reconciliation, accounting, and AR tools/makers."""
+    print("Scanning Product Hunt feeds (general + fintech + finance)...", flush=True)
     leads = []
-    feed_url = 'https://www.producthunt.com/feed'
+    feed_urls = [
+        'https://www.producthunt.com/feed',
+        'https://www.producthunt.com/feed?category=fintech',
+        'https://www.producthunt.com/feed?category=finance',
+        'https://www.producthunt.com/feed?category=productivity'
+    ]
     headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+    seen_urls = set()
     
-    try:
-        req = urllib.request.Request(feed_url, headers=headers)
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            data = resp.read()
-            soup = BeautifulSoup(data, 'xml')
-            entries = soup.find_all('entry')
+    for feed_url in feed_urls:
+        try:
+            req = urllib.request.Request(feed_url, headers=headers)
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                data = resp.read()
+                soup = BeautifulSoup(data, 'xml')
+                entries = soup.find_all('entry')
+                
+                for e in entries:
+                    link_el = e.find('link')
+                    url = link_el.get('href') if link_el else ""
+                    if not url or url in seen_urls:
+                        continue
+                    seen_urls.add(url)
+
+                    title_el = e.find('title')
+                    content_el = e.find('content')
+                    author_el = e.find('author')
+                    
+                    title = title_el.text.strip() if title_el else ""
+                    author = author_el.find('name').text.strip() if (author_el and author_el.find('name')) else "PH Maker"
+                    
+                    content_soup = BeautifulSoup(content_el.text if content_el else "", 'html.parser')
+                    full_body = content_soup.get_text().strip()
+                    
+                    lead = evaluate_content(title=title, body=full_body, platform="Product Hunt", url=url, author=author)
+                    if lead and lead.pain_severity_score >= 5:
+                        leads.append(lead)
+                        print(f"  [PH Qualified] {lead.post_title}...", flush=True)
+        except Exception as e:
+            print(f"Product Hunt feed error ({feed_url}): {e}", flush=True)
             
-            for e in entries:
-                title_el = e.find('title')
-                link_el = e.find('link')
-                content_el = e.find('content')
-                author_el = e.find('author')
-                
-                title = title_el.text.strip() if title_el else ""
-                url = link_el.get('href') if link_el else ""
-                author = author_el.find('name').text.strip() if (author_el and author_el.find('name')) else "PH Maker"
-                
-                content_soup = BeautifulSoup(content_el.text if content_el else "", 'html.parser')
-                full_body = content_soup.get_text().strip()
-                
-                lead = evaluate_content(title=title, body=full_body, platform="Product Hunt", url=url, author=author)
-                if lead:
-                    leads.append(lead)
-                    print(f"  [PH Qualified] {lead.post_title}...", flush=True)
-    except Exception as e:
-        print(f"Product Hunt scan error: {e}", flush=True)
-        
     return leads
 
 APIFY_TOKEN = os.environ.get('APIFY_TOKEN')
@@ -471,8 +512,8 @@ def scan_twitter_discussions() -> List[SocialLead]:
             existing_urls = get_existing_urls(PLATFORM_FILES['twitter'])
             
             run_input = {
-                "query": '"unapplied cash" OR "remittance advice" OR "lockbox" NetSuite lang:en',
-                "numberOfTweets": 20,
+                "query": '("unapplied cash" OR "remittance advice" OR "lockbox" OR "cash application" OR "bank reconciliation" OR "short pay" OR "BAI2") (NetSuite OR QuickBooks OR Intacct OR SAP OR Workday OR AR) lang:en',
+                "numberOfTweets": 30,
                 "search_type": "Latest",
                 "contentLanguage": "en"
             }
@@ -602,9 +643,15 @@ def scan_linkedin_discussions() -> List[SocialLead]:
                     "unapplied cash",
                     "remittance advice NetSuite",
                     "lockbox reconciliation",
-                    "cash application automation"
+                    "cash application automation",
+                    "bank reconciliation NetSuite",
+                    "unapplied payment Sage Intacct",
+                    "lockbox BAI2 matching",
+                    "short pay deductions AR",
+                    "customer deposit allocation ERP",
+                    "month-end close accounts receivable bottleneck"
                 ],
-                "maxPosts": 15,
+                "maxPosts": 10,
                 "sortBy": "date"
             }
             print("[APIFY] Launching LinkedIn Posts Actor (harvestapi/linkedin-post-search)...", flush=True)
