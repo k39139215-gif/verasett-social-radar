@@ -62,6 +62,23 @@ EXCLUDE_NOISE = [
     'crypto', 'bitcoin', 'dropshipping', 'discord nitro'
 ]
 
+SCRAPER_API_KEY = os.environ.get('SCRAPER_API_KEY')
+
+def fetch_via_scraperapi(url: str, render: bool = True) -> Optional[str]:
+    """Fetches URL via ScraperAPI rotating residential proxies to bypass cloud datacenter blocks."""
+    if not SCRAPER_API_KEY:
+        return None
+    api_url = f"http://api.scraperapi.com?api_key={SCRAPER_API_KEY}&url={urllib.parse.quote(url)}"
+    if render:
+        api_url += "&render=true"
+    req = urllib.request.Request(api_url, headers={'User-Agent': 'Mozilla/5.0'})
+    try:
+        with urllib.request.urlopen(req, timeout=35) as resp:
+            return resp.read().decode('utf-8', errors='ignore')
+    except Exception as e:
+        print(f"ScraperAPI error for {url}: {e}", flush=True)
+        return None
+
 @dataclass
 class SocialLead:
     timestamp: str
@@ -179,7 +196,7 @@ def save_platform_leads(platform_name: str, leads: List[SocialLead]):
 # -------------------------------------------------------------
 
 def scan_reddit() -> List[SocialLead]:
-    """Scans Reddit subreddits using Playwright across full query matrix."""
+    """Scans Reddit subreddits using Playwright (locally) or ScraperAPI (in cloud)."""
     print("Scanning Reddit discussions live...", flush=True)
     leads = []
     
@@ -198,6 +215,40 @@ def scan_reddit() -> List[SocialLead]:
         ('ERP', 'cash application'),
         ('ERP', 'unapplied cash')
     ]
+    
+    existing_urls = get_existing_urls(PLATFORM_FILES['reddit'])
+    post_urls_to_read = []
+    
+    # Cloud Mode: If SCRAPER_API_KEY is available, use rotating residential proxies
+    if SCRAPER_API_KEY:
+        print("Using ScraperAPI residential proxy pipeline for 24/7 Cloud...", flush=True)
+        for sub, q in reddit_searches:
+            search_url = f"https://www.reddit.com/r/{sub}/search/?q={urllib.parse.quote(q)}&sort=new"
+            html = fetch_via_scraperapi(search_url, render=True)
+            if html:
+                soup = BeautifulSoup(html, 'html.parser')
+                for a in soup.find_all('a', href=True):
+                    href = a['href']
+                    if '/comments/' in href:
+                        clean = href.split('?')[0]
+                        full_url = f"https://www.reddit.com{clean}" if clean.startswith('/') else clean
+                        if full_url not in existing_urls and full_url not in post_urls_to_read:
+                            post_urls_to_read.append(full_url)
+                            
+        print(f"Cloud ScraperAPI discovered {len(post_urls_to_read)} candidates to deep read.", flush=True)
+        for post_url in post_urls_to_read[:8]:
+            html = fetch_via_scraperapi(post_url, render=False)
+            if html:
+                soup = BeautifulSoup(html, 'html.parser')
+                h1 = soup.find('h1')
+                title = h1.get_text().strip() if h1 else ""
+                texts = [p.get_text().strip() for p in soup.find_all(['p', 'div']) if len(p.get_text().strip()) > 30]
+                full_body = " ".join(texts[:10])
+                lead = evaluate_content(title=title, body=full_body, platform="Reddit", url=post_url)
+                if lead and lead.pain_severity_score >= 6:
+                    leads.append(lead)
+        return leads
+
     
     try:
         from playwright.sync_api import sync_playwright
@@ -483,6 +534,13 @@ def run_radar_cycle():
     print(f" [SOCIAL RADAR CYCLE] {now_str}", flush=True)
     print(f"========================================================", flush=True)
     
+    # 0. Two-way sync: Pull latest leads from cloud repository
+    try:
+        import subprocess
+        subprocess.run(["git", "pull", "--rebase"], cwd=SCRIPT_DIR, capture_output=True, timeout=15)
+    except Exception:
+        pass
+        
     # 1. Reddit
     reddit_leads = scan_reddit()
     save_platform_leads('reddit', reddit_leads)
@@ -499,6 +557,15 @@ def run_radar_cycle():
     linkedin_leads = scan_linkedin_discussions()
     save_platform_leads('linkedin', linkedin_leads)
     
+    # 5. Two-way sync: Push new leads if on local machine
+    try:
+        import subprocess
+        subprocess.run(["git", "add", "social_leads/"], cwd=SCRIPT_DIR, capture_output=True, timeout=10)
+        subprocess.run(["git", "commit", "-m", "Local Radar: Sync verified leads [skip ci]"], cwd=SCRIPT_DIR, capture_output=True, timeout=10)
+        subprocess.run(["git", "push", "origin", "main"], cwd=SCRIPT_DIR, capture_output=True, timeout=15)
+    except Exception:
+        pass
+        
     print(f"Cycle completed successfully at {datetime.datetime.now().strftime('%H:%M:%S')}.\n", flush=True)
 
 def main():

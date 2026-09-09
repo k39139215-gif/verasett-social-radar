@@ -30,6 +30,8 @@ jobs:
           python -m playwright install --with-deps chromium
 
       - name: Run Radar Scan Cycle
+        env:
+          SCRAPER_API_KEY: ${{ secrets.SCRAPER_API_KEY }}
         run: |
           python multi_platform_radar.py --once
 
