@@ -456,7 +456,7 @@ def scan_twitter_discussions() -> List[SocialLead]:
                 "sort": "Latest"
             }
             print("[APIFY] Launching Twitter/X Actor (apidojo/tweet-scraper)...", flush=True)
-            run = client.actor("apidojo/tweet-scraper").call(run_input=run_input, timeout_secs=90)
+            run = client.actor("apidojo/tweet-scraper").call(run_input=run_input)
             items = list(client.dataset(run["defaultDatasetId"]).iterate_items())
             print(f"[APIFY] Fetched {len(items)} tweets from Twitter/X.", flush=True)
             
@@ -585,7 +585,7 @@ def scan_linkedin_discussions() -> List[SocialLead]:
                 "sortBy": "date"
             }
             print("[APIFY] Launching LinkedIn Posts Actor (harvestapi/linkedin-post-search)...", flush=True)
-            run = client.actor("harvestapi/linkedin-post-search").call(run_input=run_input, timeout_secs=120)
+            run = client.actor("harvestapi/linkedin-post-search").call(run_input=run_input)
             items = list(client.dataset(run["defaultDatasetId"]).iterate_items())
             print(f"[APIFY] Fetched {len(items)} posts from LinkedIn.", flush=True)
             
