@@ -24,10 +24,11 @@ import time
 import datetime
 import csv
 import json
+import re
 import urllib.request
 import urllib.parse
 from dataclasses import dataclass, asdict
-from typing import List, Optional, Set
+from typing import List, Optional, Set, Tuple
 from bs4 import BeautifulSoup
 
 # Storage Directory and Platform Files
@@ -440,9 +441,65 @@ def save_platform_leads(platform_name: str, leads: List[SocialLead]):
 # Platform Scanners
 # -------------------------------------------------------------
 
+def fetch_reddit_deep_post(url: str, fallback_snippet: str = "") -> Tuple[str, str, str]:
+    """
+    Fetches the deep, full post body, exact author (/u/username), and top comments for a Reddit thread.
+    Uses multi-proxy rotation via RSS endpoint. If fetch fails or thread is removed,
+    falls back cleanly to Google search snippet.
+    Returns: (author, full_body, clean_title)
+    """
+    clean_url = url.split('?')[0].rstrip('/')
+    rss_url = clean_url + '.rss'
+    
+    author = "Reddit User"
+    body = fallback_snippet
+    title = ""
+    
+    try:
+        raw_xml = ROTATOR.fetch(rss_url, render=False)
+        if raw_xml:
+            soup = BeautifulSoup(raw_xml, 'xml')
+            entries = soup.find_all('entry')
+            if entries:
+                first = entries[0]
+                auth_tag = first.find('author')
+                if auth_tag and auth_tag.find('name'):
+                    name = auth_tag.find('name').text.strip()
+                    if name:
+                        clean_name = name.replace('/u/', '').replace('u/', '').strip()
+                        author = f"u/{clean_name}"
+                
+                title_tag = first.find('title')
+                if title_tag and title_tag.text.strip():
+                    title = title_tag.text.strip()
+                    
+                content_tag = first.find('content')
+                if content_tag:
+                    c_text = BeautifulSoup(content_tag.text, 'html.parser').get_text().strip()
+                    c_clean = re.sub(r'submitted by\s+/u/\S+.*', '', c_text, flags=re.IGNORECASE | re.DOTALL).strip()
+                    if len(c_clean) > 25:
+                        body = c_clean
+                        
+                # Extract top comment context if available
+                if len(entries) > 1:
+                    comment_snippets = []
+                    for c_entry in entries[1:4]:
+                        c_tag = c_entry.find('content')
+                        if c_tag:
+                            c_soup = BeautifulSoup(c_tag.text, 'html.parser').get_text().strip()
+                            c_clean = re.sub(r'submitted by\s+/u/\S+.*', '', c_soup, flags=re.IGNORECASE | re.DOTALL).strip()
+                            if len(c_clean) > 30:
+                                comment_snippets.append(c_clean[:180].replace('\n', ' '))
+                    if comment_snippets:
+                        body += " | [Comments: " + " // ".join(comment_snippets) + "]"
+    except Exception:
+        pass
+        
+    return author, body, title
+
 def scan_reddit() -> List[SocialLead]:
-    """Scans Reddit finance & accounting discussions using ScraperAPI Google Search."""
-    print("Scanning Reddit discussions live via ScraperAPI Google...", flush=True)
+    """Scans Reddit finance & accounting discussions using ScraperAPI Google Search + Deep RSS Reader."""
+    print("Scanning Reddit discussions live (Deep Thread Reader enabled)...", flush=True)
     leads = []
     
     r_queries = [
@@ -471,10 +528,16 @@ def scan_reddit() -> List[SocialLead]:
                 if '/comments/' in u and u not in existing_reddit_urls and u not in evaluated_urls:
                     t = res.get('title', '').replace(' - Reddit', '').replace(' : r/NetSuite', '').replace(' : r/Accounting', '').replace(' : r/Bookkeeping', '')
                     s = res.get('snippet', '')
-                    r_lead = evaluate_content(title=t, body=s, platform="Reddit", url=u, author="Reddit User")
+                    
+                    # Deep Reddit Reader: Fetch full author, unshortened post body, and top comments
+                    deep_author, deep_body, deep_title = fetch_reddit_deep_post(u, fallback_snippet=s)
+                    final_title = deep_title if deep_title else t
+                    final_author = deep_author if deep_author else "Reddit User"
+                    
+                    r_lead = evaluate_content(title=final_title, body=deep_body, platform="Reddit", url=u, author=final_author)
                     if r_lead and r_lead.pain_severity_score >= 6:
                         leads.append(r_lead)
-                        print(f"  [Reddit Qualified] ({r_lead.pain_severity_score}/10) {r_lead.post_title[:60]}...", flush=True)
+                        print(f"  [Reddit Qualified Deep] ({r_lead.pain_severity_score}/10) {r_lead.author} - {r_lead.post_title[:50]}...", flush=True)
                     mark_url_evaluated(u)
         except Exception as e:
             print(f"  Reddit Google search error: {e}", flush=True)
