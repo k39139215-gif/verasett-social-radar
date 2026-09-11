@@ -108,8 +108,8 @@ class MultiProxyRotator:
             if val and val.strip() and val.strip() not in self.scraper_keys:
                 self.scraper_keys.append(val.strip())
         default_keys = [
-            'fe9033a5260bec642b5e5378dde09f74',
-            '4cf28cb57f49ac23bb67633fa285e0ba'
+            '4cf28cb57f49ac23bb67633fa285e0ba',
+            'fe9033a5260bec642b5e5378dde09f74'
         ]
         for dk in default_keys:
             if dk not in self.scraper_keys:
@@ -166,6 +166,20 @@ class MultiProxyRotator:
         self.active_scraper_idx += 1
 
     def fetch(self, target_url: str, render: bool = True) -> Optional[str]:
+        # Tier 0: Zero-Cost Direct Chrome TLS Impersonation via curl_cffi
+        try:
+            from curl_cffi import requests as cffi_requests
+            c_resp = cffi_requests.get(
+                target_url,
+                impersonate="chrome124",
+                timeout=18,
+                headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'}
+            )
+            if c_resp.status_code == 200 and len(c_resp.text) > 80:
+                return c_resp.text
+        except Exception:
+            pass
+
         if not self.providers:
             return None
             
@@ -232,7 +246,41 @@ class MultiProxyRotator:
             except Exception as e:
                 print(f"[GOOGLE-SEARCH] Error on key {key[:6]}...: {e}", flush=True)
                 self.active_scraper_idx += 1
-                
+        # Zero-Credit Fallback: If ScraperAPI keys are exhausted, search via curl_cffi!
+        try:
+            from curl_cffi import requests as cffi_requests
+            ddg_url = f"https://html.duckduckgo.com/html/?q={urllib.parse.quote(query)}"
+            d_resp = cffi_requests.get(
+                ddg_url,
+                impersonate="chrome124",
+                timeout=15,
+                headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'}
+            )
+            if d_resp.status_code == 200:
+                soup = BeautifulSoup(d_resp.text, 'html.parser')
+                fallback_results = []
+                for a in soup.select('.result__snippet'):
+                    parent = a.find_parent('.result')
+                    if not parent:
+                        continue
+                    title_el = parent.select_one('.result__title a')
+                    if title_el and title_el.get('href'):
+                        raw_link = title_el['href']
+                        if 'uddg=' in raw_link:
+                            m = re.search(r'uddg=([^&]+)', raw_link)
+                            if m:
+                                raw_link = urllib.parse.unquote(m.group(1))
+                        fallback_results.append({
+                            'title': title_el.text.strip(),
+                            'link': raw_link,
+                            'snippet': a.text.strip()
+                        })
+                if fallback_results:
+                    print(f"[SEARCH-FALLBACK] Extracted {len(fallback_results)} results via zero-cost curl_cffi!", flush=True)
+                    return fallback_results[:max_items]
+        except Exception as e:
+            print(f"[SEARCH-FALLBACK] Error: {e}", flush=True)
+
         return []
 
 
@@ -559,9 +607,18 @@ def scan_producthunt() -> List[SocialLead]:
     
     for feed_url in feed_urls:
         try:
-            req = urllib.request.Request(feed_url, headers=headers)
-            with urllib.request.urlopen(req, timeout=10) as resp:
-                data = resp.read()
+            data = None
+            try:
+                from curl_cffi import requests as cffi_requests
+                c_resp = cffi_requests.get(feed_url, impersonate="chrome124", timeout=12)
+                if c_resp.status_code == 200:
+                    data = c_resp.content
+            except Exception:
+                pass
+            if not data:
+                req = urllib.request.Request(feed_url, headers=headers)
+                with urllib.request.urlopen(req, timeout=10) as resp:
+                    data = resp.read()
                 soup = BeautifulSoup(data, 'xml')
                 entries = soup.find_all('entry')
                 
