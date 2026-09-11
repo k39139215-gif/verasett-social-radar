@@ -11,7 +11,7 @@ Key Principles:
 1. SEPARATE STORAGE: Leads are saved into dedicated CSVs per platform in scratch/social_leads/
 2. FULL-POST READING: Never qualifies or saves on title alone. Deeply parses post body and context.
 3. ZERO AUTOMATED OUTREACH: Pure discovery, evaluation, and intent scoring for manual review.
-4. CADENCE: Runs continuously on a 10-minute (600s) cycle.
+4. CADENCE: Runs continuously on a 30-minute (1800s) cycle.
 """
 
 import os
@@ -512,7 +512,7 @@ def scan_reddit() -> List[SocialLead]:
         'site:reddit.com/r/Accounting "bank rec" nightmare',
         'site:reddit.com/r/ERP "unapplied cash" OR "cash application"'
     ]
-    cycle_hash = int(time.time() // 600)
+    cycle_hash = int(time.time() // 1800)
     selected_queries = [
         r_queries[cycle_hash % len(r_queries)]
     ]
@@ -610,7 +610,7 @@ def scan_twitter_discussions() -> List[SocialLead]:
             'site:x.com OR site:twitter.com "short pay" deduction accounts receivable',
             'site:x.com OR site:twitter.com "bank reconciliation" NetSuite unapplied'
         ]
-        cycle_hash = int(time.time() // 600)
+        cycle_hash = int(time.time() // 1800)
         selected_queries = [
             tw_queries[cycle_hash % len(tw_queries)]
         ]
@@ -739,7 +739,7 @@ def scan_linkedin_discussions() -> List[SocialLead]:
             'site:linkedin.com/posts "unapplied cash" "month-end close"',
             'site:linkedin.com/posts "lockbox" BAI2 "accounts receivable"'
         ]
-        cycle_hash = int(time.time() // 600)
+        cycle_hash = int(time.time() // 1800)
         selected_queries = [
             li_queries[cycle_hash % len(li_queries)]
         ]
@@ -909,7 +909,7 @@ def run_radar_cycle():
     status_data = {
         "last_active_timestamp": end_time_str,
         "radar_daemon_status": "RUNNING_ACTIVE",
-        "cycle_interval_seconds": 600,
+        "cycle_interval_seconds": 1800,
         "total_verified_leads": total_leads,
         "lead_counts": {
             "reddit_leads.csv": reddit_count,
@@ -938,7 +938,7 @@ def run_radar_cycle():
     log_line = (
         f"Cycle completed at {end_time_str}. Verified leads: Reddit={reddit_count}, "
         f"LinkedIn={linkedin_count}, Twitter={twitter_count}, ProductHunt={ph_count} "
-        f"(Total: {total_leads}). Next radar scan in 10 minutes."
+        f"(Total: {total_leads}). Next radar scan in 30 minutes."
     )
     log_radar_activity(log_line)
     print(f"Cycle completed successfully at {datetime.datetime.now().strftime('%H:%M:%S')}.\n", flush=True)
@@ -946,7 +946,7 @@ def run_radar_cycle():
 def main():
     import argparse
     parser = argparse.ArgumentParser(description="Multi-Platform Social Intent Radar")
-    parser.add_argument('--interval', type=int, default=600, help="Interval in seconds (default 600s / 10 minutes)")
+    parser.add_argument('--interval', type=int, default=1800, help="Interval in seconds (default 1800s / 30 minutes)")
     parser.add_argument('--once', action='store_true', help="Run single cycle and exit")
     parser.add_argument('-i', '--instruction', type=str, default="", help="Munder instruction")
     parser.add_argument('--resume', type=str, default="", help="Session resume")
@@ -961,7 +961,7 @@ def main():
         run_radar_cycle()
         return
         
-    print(f"Starting Multi-Platform Social Radar Daemon (Interval: {args.interval}s / 10 mins)...", flush=True)
+    print(f"Starting Multi-Platform Social Radar Daemon (Interval: {args.interval}s / 30 mins)...", flush=True)
     while True:
         try:
             run_radar_cycle()
