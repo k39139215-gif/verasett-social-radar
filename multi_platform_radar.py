@@ -868,7 +868,20 @@ def run_radar_cycle():
     if os.path.exists(os.path.join(repo_dir, '.git')):
         try:
             import subprocess
+            import shutil
             subprocess.run(["git", "pull", "--rebase"], cwd=repo_dir, capture_output=True, timeout=15)
+            repo_leads = os.path.join(repo_dir, 'social_leads')
+            if os.path.exists(repo_leads):
+                desktop_dir = r"C:\Users\kartik\Desktop\Verasett_Social_Leads"
+                for fname in os.listdir(repo_leads):
+                    src = os.path.join(repo_leads, fname)
+                    if os.path.isfile(src):
+                        for dst_dir in [BASE_STORAGE_DIR, desktop_dir]:
+                            if os.path.exists(dst_dir) and os.path.abspath(dst_dir) != os.path.abspath(repo_leads):
+                                try:
+                                    shutil.copy2(src, dst_dir)
+                                except Exception:
+                                    pass
         except Exception:
             pass
         
