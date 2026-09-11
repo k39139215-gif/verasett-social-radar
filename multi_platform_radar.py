@@ -591,50 +591,15 @@ def scan_producthunt() -> List[SocialLead]:
             
     return leads
 
-APIFY_TOKEN = os.environ.get('APIFY_TOKEN')
+APIFY_TOKEN = None  # Apify bypassed: streamlined to direct high-speed ScraperAPI search
 
 def scan_twitter_discussions() -> List[SocialLead]:
-    """Scans Twitter/X discussions using Apify Twitter Advanced Search or fallback pool."""
+    """Scans Twitter/X discussions using live ScraperAPI Google Search."""
     print("Scanning Twitter / X discussions...", flush=True)
     leads = []
-    
-    if APIFY_TOKEN:
-        try:
-            from apify_client import ApifyClient
-            client = ApifyClient(APIFY_TOKEN)
-            existing_urls = get_existing_urls(PLATFORM_FILES['twitter'])
-            
-            run_input = {
-                "query": '("unapplied cash" OR "remittance advice" OR "lockbox" OR "cash application" OR "bank reconciliation" OR "short pay" OR "BAI2") (NetSuite OR QuickBooks OR Intacct OR SAP OR Workday OR AR) lang:en',
-                "numberOfTweets": 30,
-                "search_type": "Latest",
-                "contentLanguage": "en"
-            }
-            print("[APIFY] Launching Twitter/X Actor (api-ninja/x-twitter-advanced-search)...", flush=True)
-            run = client.actor("api-ninja/x-twitter-advanced-search").call(run_input=run_input)
-            dataset_id = getattr(run, "default_dataset_id", None) or (run.get("defaultDatasetId") if isinstance(run, dict) else None)
-            items = list(client.dataset(dataset_id).iterate_items()) if dataset_id else []
-            print(f"[APIFY] Fetched {len(items)} tweets from Twitter/X.", flush=True)
-            
-            for item in items:
-                text = item.get("text") or item.get("full_text") or ""
-                screen_name = item.get("screen_name") or "TwitterUser"
-                tweet_id = item.get("tweet_id") or ""
-                url = item.get("url") or f"https://x.com/{screen_name}/status/{tweet_id}"
-                author = f"@{screen_name}"
-                title = text[:80].replace('\n', ' ')
-                
-                if url and url not in existing_urls:
-                    lead = evaluate_content(title=title, body=text, platform="Twitter", url=url, author=author)
-                    if lead and lead.pain_severity_score >= 6:
-                        leads.append(lead)
-                        print(f"  [Twitter Qualified] ({lead.pain_severity_score}/10) {lead.post_title[:60]}...", flush=True)
-            if leads:
-                return leads
-        except Exception as e:
-            print(f"Apify Twitter scanner note: {e} (Failing over to ScraperAPI Google Search)", flush=True)
+    existing_urls = get_existing_urls(PLATFORM_FILES['twitter'])
 
-    # 2. Live ScraperAPI Google Search for Twitter / X
+    # Live ScraperAPI Google Search for Twitter / X
     try:
         print("[Twitter] Searching live Twitter/X discussions via ScraperAPI Google...", flush=True)
         tw_queries = [
@@ -757,59 +722,12 @@ def scan_twitter_discussions() -> List[SocialLead]:
     return leads
 
 def scan_linkedin_discussions() -> List[SocialLead]:
-    """Scans LinkedIn finance & accounting discussions using Apify LinkedIn Post Scraper or fallback benchmark."""
+    """Scans LinkedIn finance & accounting discussions using live ScraperAPI Google Search."""
     print("Scanning LinkedIn finance & accounting discussions...", flush=True)
     leads = []
-    
-    if APIFY_TOKEN:
-        try:
-            from apify_client import ApifyClient
-            client = ApifyClient(APIFY_TOKEN)
-            existing_urls = get_existing_urls(PLATFORM_FILES['linkedin'])
-            
-            run_input = {
-                "searchQueries": [
-                    "unapplied cash",
-                    "remittance advice NetSuite",
-                    "lockbox reconciliation",
-                    "cash application automation",
-                    "bank reconciliation NetSuite",
-                    "unapplied payment Sage Intacct",
-                    "lockbox BAI2 matching",
-                    "short pay deductions AR",
-                    "customer deposit allocation ERP",
-                    "month-end close accounts receivable bottleneck"
-                ],
-                "maxPosts": 10,
-                "sortBy": "date"
-            }
-            print("[APIFY] Launching LinkedIn Posts Actor (harvestapi/linkedin-post-search)...", flush=True)
-            run = client.actor("harvestapi/linkedin-post-search").call(run_input=run_input)
-            dataset_id = getattr(run, "default_dataset_id", None) or (run.get("defaultDatasetId") if isinstance(run, dict) else None)
-            items = list(client.dataset(dataset_id).iterate_items()) if dataset_id else []
-            print(f"[APIFY] Fetched {len(items)} posts from LinkedIn.", flush=True)
-            
-            for item in items:
-                text = item.get("content") or item.get("text") or item.get("commentary") or ""
-                url = item.get("linkedinUrl") or item.get("shareUrl") or item.get("url") or ""
-                author_info = item.get("author") if isinstance(item.get("author"), dict) else {}
-                author_name = author_info.get("name") or author_info.get("fullName") or f"{author_info.get('firstName', '')} {author_info.get('lastName', '')}".strip() or "LinkedIn Member"
-                author_headline = author_info.get("headline") or ""
-                author = f"{author_name} ({author_headline})" if author_headline else author_name
-                
-                title = text[:80].replace('\n', ' ')
-                
-                if url and url not in existing_urls:
-                    lead = evaluate_content(title=title, body=text, platform="LinkedIn", url=url, author=author)
-                    if lead and lead.pain_severity_score >= 6:
-                        leads.append(lead)
-                        print(f"  [LinkedIn Qualified] ({lead.pain_severity_score}/10) {lead.post_title[:60]}...", flush=True)
-            if leads:
-                return leads
-        except Exception as e:
-            print(f"Apify LinkedIn scanner note: {e} (Failing over to ScraperAPI Google Search)", flush=True)
+    existing_urls = get_existing_urls(PLATFORM_FILES['linkedin'])
 
-    # 2. Live ScraperAPI Google Search for LinkedIn Posts
+    # Live ScraperAPI Google Search for LinkedIn Posts
     try:
         print("[LinkedIn] Searching live LinkedIn discussions via ScraperAPI Google...", flush=True)
         li_queries = [
@@ -1030,7 +948,14 @@ def main():
     parser = argparse.ArgumentParser(description="Multi-Platform Social Intent Radar")
     parser.add_argument('--interval', type=int, default=600, help="Interval in seconds (default 600s / 10 minutes)")
     parser.add_argument('--once', action='store_true', help="Run single cycle and exit")
-    args = parser.parse_args()
+    parser.add_argument('-i', '--instruction', type=str, default="", help="Munder instruction")
+    parser.add_argument('--resume', type=str, default="", help="Session resume")
+    args, _ = parser.parse_known_args()
+    
+    print("[DWIGHT SCHRUTE] Multi-Platform Social Intent Radar Activated!", flush=True)
+    print("Office Station: Lead Scout Desk (Munder Difflin)", flush=True)
+    print(f"Targets: Reddit | LinkedIn | Twitter / X | Product Hunt (Interval: {args.interval}s)", flush=True)
+    print("=" * 60, flush=True)
     
     if args.once:
         run_radar_cycle()
@@ -1043,7 +968,7 @@ def main():
         except Exception as e:
             print(f"Error in radar cycle: {e}", flush=True)
             
-        print(f"Sleeping for {args.interval} seconds until next cycle...", flush=True)
+        print(f"Cycle completed. Sleeping for {args.interval} seconds until next scan...", flush=True)
         time.sleep(args.interval)
 
 if __name__ == '__main__':
