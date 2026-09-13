@@ -95,7 +95,10 @@ ERP_SIGNALS = [
 EXCLUDE_NOISE = [
     'homework', 'cpa exam', 'exam prep', 'meme', 'hiring', 'job opening',
     'salary thread', 'internship', 'study guide', 'interview question',
-    'crypto', 'bitcoin', 'dropshipping', 'discord nitro'
+    'crypto', 'bitcoin', 'dropshipping', 'discord nitro',
+    'personal finance', 'budgeting app', 'budget app', 'stock market',
+    'investing app', 'portfolio tracker', 'biometrics', 'clinical trial',
+    'brokerage', 'trading app', 'credit card rewards', 'forex'
 ]
 
 def clean_search_query(q: str) -> str:
@@ -614,12 +617,13 @@ def scan_reddit() -> List[SocialLead]:
 
     return leads
 
-# Broadened Product Hunt Signals for Accounting & Fintech Launches
+# Laser-Targeted Product Hunt Signals strictly for B2B Accounting, AR & Reconciliation
 PH_FINTECH_SIGNALS = [
-    'reconciliation', 'invoice', 'invoicing', 'billing', 'accounts receivable',
-    'cash application', 'cash flow', 'accounting', 'bookkeeping', 'payment',
+    'reconciliation', 'invoice matching', 'invoice', 'invoicing', 'billing automation', 'billing',
+    'accounts receivable', 'ar automation', 'cash application', 'cash flow',
+    'accounting automation', 'accounting', 'bookkeeping automation', 'bookkeeping',
     'quickbooks', 'xero', 'netsuite', 'financial close', 'subledger', 'ledger',
-    'expense management', 'finance', 'spend management', 'audit'
+    'spend management', 'audit management', 'b2b finance', 'corporate finance'
 ]
 
 def scan_producthunt() -> List[SocialLead]:
