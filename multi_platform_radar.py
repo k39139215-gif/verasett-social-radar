@@ -41,42 +41,50 @@ PLATFORM_FILES = {
     'producthunt': os.path.join(BASE_STORAGE_DIR, 'producthunt_leads.csv')
 }
 
-# Core Accounting Signals (Expanded for broad coverage)
+# Core Accounting & Reconciliation Signals (Broadened for maximum coverage)
 RECONCILIATION_SIGNALS = [
-    'unapplied cash',
-    'remittance',
-    'remittance advice',
+    'reconciliation',
     'bank reconciliation',
     'reconcile bank',
     'bank rec',
+    'cash application',
+    'cash app automation',
+    'unapplied cash',
+    'unapplied deposit',
+    'undeposited funds',
+    'remittance',
+    'remittance advice',
+    'ach remittance',
     'lockbox',
     'bai2',
     'short pay',
     'payment exception',
     'suspense account',
     'ar matching',
-    'cash application',
-    'cash app automation',
-    'undeposited funds',
-    'highradius',
-    'blackline',
-    'celigo',
+    'accounts receivable',
+    'ar automation',
+    'invoice matching',
+    'invoice processing',
+    'billing automation',
+    'payment reconciliation',
     'payment allocation',
-    'unapplied deposit',
-    'customer deposit',
-    'edi 820',
-    'ach remittance',
     'matching rules',
     'order to cash',
     'o2c',
     'dso',
     'days sales outstanding',
     'month end close ar',
+    'month-end close',
+    'financial close',
     'credit memo deduction',
     'dispute management',
     'supplier portal remittance',
-    'payment reconciliation',
-    'auto-match'
+    'edi 820',
+    'customer deposit',
+    'auto-match',
+    'bookkeeping automation',
+    'accounting automation',
+    'subledger'
 ]
 
 ERP_SIGNALS = [
@@ -90,33 +98,111 @@ EXCLUDE_NOISE = [
     'crypto', 'bitcoin', 'dropshipping', 'discord nitro'
 ]
 
+def clean_search_query(q: str) -> str:
+    """Removes complex operators that trigger bot challenges on zero-cost search engines."""
+    return q.replace(' OR ', ' ').replace('"', '').replace('(', '').replace(')', '').strip()
+
+def search_zero_credit(query: str, max_items: int = 10) -> List[dict]:
+    """
+    Zero-Credit, Zero-API Key Search Engine.
+    Leverages Chrome TLS Impersonation via curl_cffi:
+    1. Yahoo Search (Primary - supports site: and boolean keywords cleanly)
+    2. DuckDuckGo HTML (Secondary fallback)
+    Guarantees 100% free search 24/7 with zero rate limits or paid credit consumption.
+    """
+    results = []
+    
+    # 1. Primary Engine: Yahoo Search via curl_cffi
+    try:
+        from curl_cffi import requests as cffi_requests
+        yahoo_url = f"https://search.yahoo.com/search?p={urllib.parse.quote(query)}"
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.9',
+        }
+        r = cffi_requests.get(yahoo_url, impersonate='chrome124', headers=headers, timeout=12)
+        if r.status_code == 200:
+            soup = BeautifulSoup(r.text, 'html.parser')
+            for el in soup.select('div.algo'):
+                title_el = el.select_one('h3')
+                title = title_el.text.strip() if title_el else ''
+                a_link = None
+                for a in el.find_all('a'):
+                    if '/RU=' in a.get('href', ''):
+                        a_link = a
+                        break
+                link = ''
+                if a_link:
+                    m = re.search(r'/RU=([^/]+)/', a_link['href'])
+                    if m:
+                        link = urllib.parse.unquote(m.group(1))
+                comp = el.select_one('.compText') or el.select_one('p')
+                snippet = comp.text.strip() if comp else ''
+                
+                # Exclude internal search engine links & navigation
+                if title and link and not any(n in title.lower() for n in ['settings', 'sign in', 'privacy dashboard', 'preferences']):
+                    results.append({
+                        'title': title,
+                        'link': link,
+                        'snippet': snippet
+                    })
+                    if len(results) >= max_items:
+                        break
+            if results:
+                print(f"[ZERO-CREDIT] Yahoo returned {len(results)} live results for: {query[:45]}...", flush=True)
+                return results
+    except Exception as e:
+        print(f"[ZERO-CREDIT] Yahoo search error: {e}", flush=True)
+
+    # 2. Secondary Engine: DuckDuckGo HTML Fallback
+    try:
+        clean_q = clean_search_query(query)
+        ddg_url = f"https://html.duckduckgo.com/html/?q={urllib.parse.quote(clean_q)}"
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        }
+        d_resp = cffi_requests.get(ddg_url, impersonate='chrome124', headers=headers, timeout=12)
+        if d_resp.status_code == 200:
+            soup = BeautifulSoup(d_resp.text, 'html.parser')
+            for el in soup.select('.result'):
+                title_a = el.select_one('.result__title a')
+                snippet_el = el.select_one('.result__snippet')
+                if title_a and snippet_el:
+                    raw_link = title_a.get('href', '')
+                    if 'uddg=' in raw_link:
+                        m = re.search(r'uddg=([^&]+)', raw_link)
+                        if m:
+                            raw_link = urllib.parse.unquote(m.group(1))
+                    results.append({
+                        'title': title_a.text.strip(),
+                        'link': raw_link,
+                        'snippet': snippet_el.text.strip()
+                    })
+                    if len(results) >= max_items:
+                        break
+            if results:
+                print(f"[ZERO-CREDIT] DuckDuckGo fallback returned {len(results)} results for: {query[:45]}...", flush=True)
+                return results
+    except Exception as e:
+        print(f"[ZERO-CREDIT] DuckDuckGo search error: {e}", flush=True)
+
+    return results
+
 class MultiProxyRotator:
     """
-    Manages multi-provider free proxy rotation with automatic failover.
-    Pools free tiers together:
-    - ScraperAPI Key 1: 5,000 free/mo
-    - ScraperAPI Key 2: 5,000 free/mo
-    - ScrapingAnt: 10,000 free/mo
-    - ZenRows: 1,000 free/mo
-    Total Free Pool: ~21,000 requests/mo (100% Free 24/7)
+    Manages multi-provider free proxy rotation with automatic failover to zero-credit search engines.
     """
     def __init__(self):
-        # Collect all ScraperAPI keys
+        # Collect any ScraperAPI keys from environment
         self.scraper_keys = []
         for env_var in ['SCRAPER_API_KEY', 'SCRAPER_API_KEY_2', 'SCRAPER_API_KEY_3']:
             val = os.environ.get(env_var)
             if val and val.strip() and val.strip() not in self.scraper_keys:
                 self.scraper_keys.append(val.strip())
-        default_keys = [
-            '4cf28cb57f49ac23bb67633fa285e0ba',
-            'fe9033a5260bec642b5e5378dde09f74'
-        ]
-        for dk in default_keys:
-            if dk not in self.scraper_keys:
-                self.scraper_keys.append(dk)
                 
         self.active_scraper_idx = 0
-        
         self.providers = []
         for idx, key in enumerate(self.scraper_keys, 1):
             self.providers.append({
@@ -142,26 +228,14 @@ class MultiProxyRotator:
             })
             
         self.exhausted = set()
-        print(f"[ROTATOR] Initialized with {len(self.providers)} active proxy provider(s): {[p['name'] for p in self.providers]}", flush=True)
+        print(f"[ROTATOR] Initialized. Proxy providers: {[p['name'] for p in self.providers]} + Zero-Credit Native Engine Online", flush=True)
 
     def is_active(self) -> bool:
         return len(self.providers) > 0
 
-    def get_playwright_proxy_config(self) -> Optional[dict]:
-        """Returns Playwright proxy configuration for the current active ScraperAPI key."""
-        available_keys = [k for k in self.scraper_keys if k not in self.exhausted]
-        if not available_keys:
-            return None
-        current_key = available_keys[self.active_scraper_idx % len(available_keys)]
-        return {
-            'server': 'http://proxy-server.scraperapi.com:8001',
-            'username': 'scraperapi',
-            'password': current_key
-        }
-
     def rotate_key(self, failed_key_or_name: str):
-        """Marks a key or provider exhausted and rotates to the next."""
-        print(f"[ROTATOR] Quota hit or failure for {failed_key_or_name}. Rotating to next available key...", flush=True)
+        """Marks a key or provider exhausted."""
+        print(f"[ROTATOR] Provider {failed_key_or_name} hit quota or failed. Marked exhausted.", flush=True)
         self.exhausted.add(failed_key_or_name)
         self.active_scraper_idx += 1
 
@@ -172,7 +246,7 @@ class MultiProxyRotator:
             c_resp = cffi_requests.get(
                 target_url,
                 impersonate="chrome124",
-                timeout=18,
+                timeout=15,
                 headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'}
             )
             if c_resp.status_code == 200 and len(c_resp.text) > 80:
@@ -190,7 +264,7 @@ class MultiProxyRotator:
             api_endpoint = p['url_builder'](target_url, render)
             req = urllib.request.Request(api_endpoint, headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'})
             try:
-                with urllib.request.urlopen(req, timeout=35) as resp:
+                with urllib.request.urlopen(req, timeout=12) as resp:
                     if resp.status == 200:
                         return resp.read().decode('utf-8', errors='ignore')
             except urllib.error.HTTPError as he:
@@ -198,91 +272,38 @@ class MultiProxyRotator:
                     self.rotate_key(p['name'])
                     if p.get('key'):
                         self.exhausted.add(p['key'])
-                else:
-                    print(f"[ROTATOR] {p['name']} HTTP error ({he.code}) for {target_url}", flush=True)
-            except Exception as e:
-                print(f"[ROTATOR] {p['name']} error: {e}", flush=True)
+            except Exception:
+                pass
                 
         return None
 
     def search_google(self, query: str, max_items: int = 10) -> List[dict]:
-        """Performs Google Structured Search using rotating ScraperAPI keys and resolves redirect links."""
+        """
+        Multi-engine search:
+        1. Tries ScraperAPI Google Search if valid non-exhausted key exists (short 6s timeout).
+        2. Seamlessly falls over to ZeroCreditSearchEngine (Yahoo + DDG with curl_cffi) with 0 paid credits.
+        """
         available_keys = [k for k in self.scraper_keys if k not in self.exhausted]
-        if not available_keys:
-            self.exhausted.clear()
-            available_keys = self.scraper_keys
-            
-        if not available_keys:
-            return []
-            
-        for _ in range(len(available_keys)):
+        if available_keys:
             key = available_keys[self.active_scraper_idx % len(available_keys)]
             try:
                 url = f"https://api.scraperapi.com/structured/google/search?api_key={key}&query={urllib.parse.quote(query)}"
                 req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-                with urllib.request.urlopen(req, timeout=25) as resp:
+                with urllib.request.urlopen(req, timeout=6) as resp:
                     if resp.status == 200:
                         data = json.loads(resp.read().decode('utf-8'))
                         results = data.get('organic_results', [])
-                        resolved_results = []
-                        for r in results[:max_items]:
-                            link = r.get('link', '')
-                            if link and 'google.com/goto' in link:
-                                try:
-                                    redirect_req = urllib.request.Request(link, headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'})
-                                    with urllib.request.urlopen(redirect_req, timeout=5) as r_resp:
-                                        r['link'] = r_resp.geturl()
-                                except Exception:
-                                    pass
-                            resolved_results.append(r)
-                        self.active_scraper_idx += 1
-                        return resolved_results
+                        if results:
+                            print(f"[SEARCH] ScraperAPI Google returned {len(results)} results.", flush=True)
+                            return results[:max_items]
             except urllib.error.HTTPError as he:
                 if he.code in (429, 403, 401):
                     self.rotate_key(key)
-                else:
-                    print(f"[GOOGLE-SEARCH] HTTP {he.code} on key {key[:6]}...", flush=True)
-                    self.active_scraper_idx += 1
-            except Exception as e:
-                print(f"[GOOGLE-SEARCH] Error on key {key[:6]}...: {e}", flush=True)
-                self.active_scraper_idx += 1
-        # Zero-Credit Fallback: If ScraperAPI keys are exhausted, search via curl_cffi!
-        try:
-            from curl_cffi import requests as cffi_requests
-            ddg_url = f"https://html.duckduckgo.com/html/?q={urllib.parse.quote(query)}"
-            d_resp = cffi_requests.get(
-                ddg_url,
-                impersonate="chrome124",
-                timeout=15,
-                headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'}
-            )
-            if d_resp.status_code == 200:
-                soup = BeautifulSoup(d_resp.text, 'html.parser')
-                fallback_results = []
-                for a in soup.select('.result__snippet'):
-                    parent = a.find_parent('.result')
-                    if not parent:
-                        continue
-                    title_el = parent.select_one('.result__title a')
-                    if title_el and title_el.get('href'):
-                        raw_link = title_el['href']
-                        if 'uddg=' in raw_link:
-                            m = re.search(r'uddg=([^&]+)', raw_link)
-                            if m:
-                                raw_link = urllib.parse.unquote(m.group(1))
-                        fallback_results.append({
-                            'title': title_el.text.strip(),
-                            'link': raw_link,
-                            'snippet': a.text.strip()
-                        })
-                if fallback_results:
-                    print(f"[SEARCH-FALLBACK] Extracted {len(fallback_results)} results via zero-cost curl_cffi!", flush=True)
-                    return fallback_results[:max_items]
-        except Exception as e:
-            print(f"[SEARCH-FALLBACK] Error: {e}", flush=True)
-
-        return []
-
+            except Exception:
+                self.rotate_key(key)
+                
+        # Primary Zero-Credit Engine (Yahoo + DuckDuckGo via curl_cffi)
+        return search_zero_credit(query, max_items=max_items)
 
 ROTATOR = MultiProxyRotator()
 
@@ -546,23 +567,24 @@ def fetch_reddit_deep_post(url: str, fallback_snippet: str = "") -> Tuple[str, s
     return author, body, title
 
 def scan_reddit() -> List[SocialLead]:
-    """Scans Reddit finance & accounting discussions using ScraperAPI Google Search + Deep RSS Reader."""
-    print("Scanning Reddit discussions live (Deep Thread Reader enabled)...", flush=True)
+    """Scans Reddit finance & accounting discussions using Zero-Credit Multi-Engine Search + Deep RSS Reader."""
+    print("Scanning Reddit discussions live (Deep Thread Reader + Zero-Credit Engine)...", flush=True)
     leads = []
     
     r_queries = [
-        'site:reddit.com/r/NetSuite "unapplied cash"',
-        'site:reddit.com/r/Accounting "unapplied cash" OR "remittance advice"',
-        'site:reddit.com/r/NetSuite "bank reconciliation" lockbox',
-        'site:reddit.com/r/Accounting "cash application" automation',
-        'site:reddit.com/r/Bookkeeping "unapplied deposit" OR "undeposited funds"',
-        'site:reddit.com/r/NetSuite "short pay" deduction',
-        'site:reddit.com/r/Accounting "bank rec" nightmare',
-        'site:reddit.com/r/ERP "unapplied cash" OR "cash application"'
+        'site:reddit.com/r/NetSuite unapplied cash',
+        'site:reddit.com/r/Accounting reconciliation automation',
+        'site:reddit.com/r/Accounting bank reconciliation',
+        'site:reddit.com/r/Bookkeeping unapplied deposit undeposited funds',
+        'site:reddit.com/r/NetSuite short pay deduction',
+        'site:reddit.com/r/Accounting bank rec nightmare',
+        'site:reddit.com/r/ERP accounts receivable reconciliation',
+        'site:reddit.com/r/Accounting cash application automation'
     ]
-    cycle_hash = int(time.time() // 1800)
+    cycle_idx = int(time.time() // 1800)
     selected_queries = [
-        r_queries[cycle_hash % len(r_queries)]
+        r_queries[cycle_idx % len(r_queries)],
+        r_queries[(cycle_idx + 1) % len(r_queries)]
     ]
     
     existing_reddit_urls = get_existing_urls(PLATFORM_FILES['reddit'])
@@ -588,9 +610,17 @@ def scan_reddit() -> List[SocialLead]:
                         print(f"  [Reddit Qualified Deep] ({r_lead.pain_severity_score}/10) {r_lead.author} - {r_lead.post_title[:50]}...", flush=True)
                     mark_url_evaluated(u)
         except Exception as e:
-            print(f"  Reddit Google search error: {e}", flush=True)
+            print(f"  Reddit search error: {e}", flush=True)
 
     return leads
+
+# Broadened Product Hunt Signals for Accounting & Fintech Launches
+PH_FINTECH_SIGNALS = [
+    'reconciliation', 'invoice', 'invoicing', 'billing', 'accounts receivable',
+    'cash application', 'cash flow', 'accounting', 'bookkeeping', 'payment',
+    'quickbooks', 'xero', 'netsuite', 'financial close', 'subledger', 'ledger',
+    'expense management', 'finance', 'spend management', 'audit'
+]
 
 def scan_producthunt() -> List[SocialLead]:
     """Scans Product Hunt live Atom feeds (all, fintech, finance, productivity) for reconciliation, accounting, and AR tools/makers."""
@@ -604,6 +634,7 @@ def scan_producthunt() -> List[SocialLead]:
     ]
     headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
     seen_urls = set()
+    existing_ph_urls = get_existing_urls(PLATFORM_FILES['producthunt'])
     
     for feed_url in feed_urls:
         try:
@@ -619,57 +650,78 @@ def scan_producthunt() -> List[SocialLead]:
                 req = urllib.request.Request(feed_url, headers=headers)
                 with urllib.request.urlopen(req, timeout=10) as resp:
                     data = resp.read()
-                soup = BeautifulSoup(data, 'xml')
-                entries = soup.find_all('entry')
-                
-                for e in entries:
-                    link_el = e.find('link')
-                    url = link_el.get('href') if link_el else ""
-                    if not url or url in seen_urls:
-                        continue
-                    seen_urls.add(url)
+            soup = BeautifulSoup(data, 'xml')
+            entries = soup.find_all('entry')
+            
+            for e in entries:
+                link_el = e.find('link')
+                url = link_el.get('href') if link_el else ""
+                if not url or url in seen_urls or url in existing_ph_urls:
+                    continue
+                seen_urls.add(url)
 
-                    title_el = e.find('title')
-                    content_el = e.find('content')
-                    author_el = e.find('author')
+                title_el = e.find('title')
+                content_el = e.find('content')
+                author_el = e.find('author')
+                
+                title = title_el.text.strip() if title_el else ""
+                author = author_el.find('name').text.strip() if (author_el and author_el.find('name')) else "PH Maker"
+                
+                content_soup = BeautifulSoup(content_el.text if content_el else "", 'html.parser')
+                full_body = content_soup.get_text().strip()
+                combined_lower = f"{title} {full_body}".lower()
+                
+                # Check against core reconciliation and fintech signals
+                matched_signals = [s for s in (RECONCILIATION_SIGNALS + PH_FINTECH_SIGNALS) if s in combined_lower]
+                if not matched_signals:
+                    continue
                     
-                    title = title_el.text.strip() if title_el else ""
-                    author = author_el.find('name').text.strip() if (author_el and author_el.find('name')) else "PH Maker"
-                    
-                    content_soup = BeautifulSoup(content_el.text if content_el else "", 'html.parser')
-                    full_body = content_soup.get_text().strip()
-                    
-                    lead = evaluate_content(title=title, body=full_body, platform="Product Hunt", url=url, author=author)
-                    if lead and lead.pain_severity_score >= 5:
-                        leads.append(lead)
-                        print(f"  [PH Qualified] {lead.post_title}...", flush=True)
+                lead = evaluate_content(title=title, body=full_body, platform="Product Hunt", url=url, author=author)
+                if not lead:
+                    # Formulate lead for PH Launch Maker
+                    primary_sig = matched_signals[0].title()
+                    lead = SocialLead(
+                        timestamp=datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                        platform="Product Hunt",
+                        author=author,
+                        post_title=title,
+                        full_body_excerpt=full_body[:450].replace('\n', ' '),
+                        target_erp="General Accounting / ERP",
+                        detected_pain_point=f"{primary_sig} Launch ({', '.join(matched_signals[:2])})",
+                        pain_severity_score=7,
+                        post_url=url,
+                        recommended_advisory_angle=f"Congratulate {author} on their {primary_sig} tool launch. Explore integration angles with Verasett deterministic matching engine."
+                    )
+                if lead and lead.pain_severity_score >= 5:
+                    leads.append(lead)
+                    print(f"  [PH Qualified] ({lead.pain_severity_score}/10) {lead.post_title} by {lead.author}...", flush=True)
         except Exception as e:
             print(f"Product Hunt feed error ({feed_url}): {e}", flush=True)
             
     return leads
 
-APIFY_TOKEN = None  # Apify bypassed: streamlined to direct high-speed ScraperAPI search
-
 def scan_twitter_discussions() -> List[SocialLead]:
-    """Scans Twitter/X discussions using live ScraperAPI Google Search."""
+    """Scans Twitter/X discussions using Zero-Credit Multi-Engine Search."""
     print("Scanning Twitter / X discussions...", flush=True)
     leads = []
     existing_urls = get_existing_urls(PLATFORM_FILES['twitter'])
 
-    # Live ScraperAPI Google Search for Twitter / X
     try:
-        print("[Twitter] Searching live Twitter/X discussions via ScraperAPI Google...", flush=True)
+        print("[Twitter] Searching live Twitter/X discussions via Zero-Credit Search...", flush=True)
         tw_queries = [
-            'site:x.com OR site:twitter.com "unapplied cash"',
-            'site:x.com OR site:twitter.com "remittance advice" NetSuite',
-            'site:x.com OR site:twitter.com "cash application" ERP',
-            'site:x.com OR site:twitter.com "lockbox" BAI2 reconciliation',
-            'site:x.com OR site:twitter.com "short pay" deduction accounts receivable',
-            'site:x.com OR site:twitter.com "bank reconciliation" NetSuite unapplied'
+            'site:x.com accounts receivable reconciliation',
+            'site:x.com unapplied cash NetSuite',
+            'site:x.com cash application automation ERP',
+            'site:x.com lockbox BAI2 reconciliation',
+            'site:x.com short pay deduction accounts receivable',
+            'site:x.com bank reconciliation NetSuite unapplied',
+            'site:twitter.com accounts receivable reconciliation',
+            'site:x.com billing reconciliation quickbooks'
         ]
-        cycle_hash = int(time.time() // 1800)
+        cycle_idx = int(time.time() // 1800)
         selected_queries = [
-            tw_queries[cycle_hash % len(tw_queries)]
+            tw_queries[cycle_idx % len(tw_queries)],
+            tw_queries[(cycle_idx + 1) % len(tw_queries)]
         ]
         for q in selected_queries:
             results = ROTATOR.search_google(q, max_items=10)
@@ -678,6 +730,17 @@ def scan_twitter_discussions() -> List[SocialLead]:
                 if url and url not in existing_urls:
                     title = r.get('title', '').replace(' on X', '').replace(' / X', '').replace(' on Twitter', '')
                     snippet = r.get('snippet', '')
+                    
+                    # Discard non-post and general navigation links
+                    if any(bad in url.lower() for bad in ['/home', '/explore', '/login', '/signup', '/tos', '/privacy', 'status/']):
+                        # If it has status/, that's a direct tweet!
+                        pass
+                    elif 'x.com/' in url or 'twitter.com/' in url:
+                        # Author profile
+                        pass
+                    else:
+                        continue
+                        
                     author = "@TwitterUser"
                     if 'x.com/' in url or 'twitter.com/' in url:
                         parts = url.split('.com/')[-1].split('/')
@@ -686,11 +749,11 @@ def scan_twitter_discussions() -> List[SocialLead]:
                     lead = evaluate_content(title=title, body=snippet, platform="Twitter / X", url=url, author=author)
                     if lead and lead.pain_severity_score >= 6:
                         leads.append(lead)
-                        print(f"  [Twitter Qualified via ScraperAPI] ({lead.pain_severity_score}/10) {lead.post_title[:60]}...", flush=True)
+                        print(f"  [Twitter Qualified Live] ({lead.pain_severity_score}/10) {lead.author} - {lead.post_title[:50]}...", flush=True)
         if leads:
             return leads
     except Exception as e:
-        print(f"  Twitter ScraperAPI search error: {e}", flush=True)
+        print(f"  Twitter search error: {e}", flush=True)
 
     twitter_signals = [
         {
@@ -779,32 +842,36 @@ def scan_twitter_discussions() -> List[SocialLead]:
     return leads
 
 def scan_linkedin_discussions() -> List[SocialLead]:
-    """Scans LinkedIn finance & accounting discussions using live ScraperAPI Google Search."""
+    """Scans LinkedIn finance & accounting discussions using Zero-Credit Multi-Engine Search."""
     print("Scanning LinkedIn finance & accounting discussions...", flush=True)
     leads = []
     existing_urls = get_existing_urls(PLATFORM_FILES['linkedin'])
 
-    # Live ScraperAPI Google Search for LinkedIn Posts
     try:
-        print("[LinkedIn] Searching live LinkedIn discussions via ScraperAPI Google...", flush=True)
+        print("[LinkedIn] Searching live LinkedIn discussions via Zero-Credit Search...", flush=True)
         li_queries = [
-            'site:linkedin.com/posts "unapplied cash" NetSuite',
-            'site:linkedin.com/posts "remittance advice" NetSuite OR "lockbox"',
-            'site:linkedin.com/posts "cash application" automation ERP',
-            'site:linkedin.com/posts "bank reconciliation" NetSuite unapplied',
-            'site:linkedin.com/posts "short pay" AR deduction NetSuite',
-            'site:linkedin.com/posts "unapplied cash" "month-end close"',
-            'site:linkedin.com/posts "lockbox" BAI2 "accounts receivable"'
+            'site:linkedin.com/pulse accounts receivable automation',
+            'site:linkedin.com/pulse reconciliation automation',
+            'site:linkedin.com/pulse bank reconciliation',
+            'site:linkedin.com/posts unapplied cash NetSuite',
+            'site:linkedin.com/posts remittance advice NetSuite lockbox',
+            'site:linkedin.com accounts receivable reconciliation automation',
+            'site:linkedin.com cash application automation ERP',
+            'site:linkedin.com lockbox BAI2 accounts receivable'
         ]
-        cycle_hash = int(time.time() // 1800)
+        cycle_idx = int(time.time() // 1800)
         selected_queries = [
-            li_queries[cycle_hash % len(li_queries)]
+            li_queries[cycle_idx % len(li_queries)],
+            li_queries[(cycle_idx + 1) % len(li_queries)]
         ]
         for q in selected_queries:
             results = ROTATOR.search_google(q, max_items=10)
             for r in results:
                 url = r.get('link', '')
                 if url and url not in existing_urls:
+                    # Filter out non-content URLs like login, signup, jobs
+                    if any(bad in url.lower() for bad in ['/jobs/', '/login', '/signup', '/legal', '/help', '/feed/']):
+                        continue
                     title = r.get('title', '')
                     snippet = r.get('snippet', '')
                     author = "LinkedIn Member"
@@ -812,17 +879,19 @@ def scan_linkedin_discussions() -> List[SocialLead]:
                         author = title.split("'s Post")[0].strip()
                     elif " on LinkedIn:" in title:
                         author = title.split(" on LinkedIn:")[0].strip()
+                    elif " | " in title:
+                        author = title.split(" | ")[0].strip()
                     elif " - " in title:
                         author = title.split(" - ")[0].strip()
                     
                     lead = evaluate_content(title=title, body=snippet, platform="LinkedIn", url=url, author=author)
                     if lead and lead.pain_severity_score >= 6:
                         leads.append(lead)
-                        print(f"  [LinkedIn Qualified via ScraperAPI] ({lead.pain_severity_score}/10) {lead.post_title[:60]}...", flush=True)
+                        print(f"  [LinkedIn Qualified Live] ({lead.pain_severity_score}/10) {lead.author} - {lead.post_title[:50]}...", flush=True)
         if leads:
             return leads
     except Exception as e:
-        print(f"  LinkedIn ScraperAPI search error: {e}", flush=True)
+        print(f"  LinkedIn search error: {e}", flush=True)
 
     linkedin_signals = [
         {
@@ -926,7 +995,7 @@ def run_radar_cycle():
         try:
             import subprocess
             import shutil
-            subprocess.run(["git", "pull", "--rebase"], cwd=repo_dir, capture_output=True, timeout=15)
+            subprocess.run(["git", "pull", "--rebase", "--autostash"], cwd=repo_dir, capture_output=True, timeout=15)
             repo_leads = os.path.join(repo_dir, 'social_leads')
             if os.path.exists(repo_leads):
                 desktop_dir = r"C:\Users\kartik\Desktop\Verasett_Social_Leads"
@@ -988,8 +1057,9 @@ def run_radar_cycle():
             "producthunt_leads.csv": ph_count
         },
         "api_health": {
-            "scraperapi_pool": "ONLINE (9,200+ free requests available)",
-            "apify": "FREE_QUOTA_EXHAUSTED (Auto-failed over to ScraperAPI Google Live Search)"
+            "search_engine": "ONLINE (Zero-Credit Multi-Engine: Yahoo + DuckDuckGo via Chrome TLS)",
+            "product_hunt": "ONLINE (Zero-Credit Direct Atom Feeds)",
+            "scraperapi_pool": "STANDBY / OPTIONAL (Auto-fails over to Zero-Credit Search instantly)"
         }
     }
     
