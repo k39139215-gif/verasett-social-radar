@@ -1,13 +1,13 @@
 {
-  "last_active_timestamp": "2026-09-13 13:31:28",
+  "last_active_timestamp": "2026-09-13 14:01:45",
   "radar_daemon_status": "RUNNING_ACTIVE",
   "cycle_interval_seconds": 1800,
-  "total_verified_leads": 321,
+  "total_verified_leads": 330,
   "lead_counts": {
-    "reddit_leads.csv": 115,
-    "twitter_leads.csv": 75,
-    "linkedin_leads.csv": 106,
-    "producthunt_leads.csv": 25
+    "reddit_leads.csv": 121,
+    "twitter_leads.csv": 76,
+    "linkedin_leads.csv": 113,
+    "producthunt_leads.csv": 20
   },
   "api_health": {
     "search_engine": "ONLINE (Zero-Credit Multi-Engine: Yahoo + DuckDuckGo via Chrome TLS)",
