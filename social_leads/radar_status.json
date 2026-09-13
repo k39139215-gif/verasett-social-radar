@@ -1,16 +1,17 @@
 {
-  "last_active_timestamp": "2026-09-13 13:02:36",
+  "last_active_timestamp": "2026-09-13 13:25:37",
   "radar_daemon_status": "RUNNING_ACTIVE",
   "cycle_interval_seconds": 1800,
-  "total_verified_leads": 269,
+  "total_verified_leads": 313,
   "lead_counts": {
-    "reddit_leads.csv": 105,
-    "twitter_leads.csv": 71,
-    "linkedin_leads.csv": 89,
-    "producthunt_leads.csv": 4
+    "reddit_leads.csv": 113,
+    "twitter_leads.csv": 75,
+    "linkedin_leads.csv": 100,
+    "producthunt_leads.csv": 25
   },
   "api_health": {
-    "scraperapi_pool": "ONLINE (9,200+ free requests available)",
-    "apify": "FREE_QUOTA_EXHAUSTED (Auto-failed over to ScraperAPI Google Live Search)"
+    "search_engine": "ONLINE (Zero-Credit Multi-Engine: Yahoo + DuckDuckGo via Chrome TLS)",
+    "product_hunt": "ONLINE (Zero-Credit Direct Atom Feeds)",
+    "scraperapi_pool": "STANDBY / OPTIONAL (Auto-fails over to Zero-Credit Search instantly)"
   }
 }
