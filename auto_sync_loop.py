@@ -20,6 +20,8 @@ def sync_cycle():
                 dst = os.path.join(desktop_dir, fname)
                 if os.path.isfile(src):
                     shutil.copy2(src, dst)
+                elif os.path.isdir(src):
+                    shutil.copytree(src, dst, dirs_exist_ok=True)
             print(f"[AUTO-SYNC] Synced latest leads to Desktop at {time.strftime('%Y-%m-%d %H:%M:%S')}", flush=True)
     except Exception as e:
         print(f"[AUTO-SYNC] Error: {e}", flush=True)
