@@ -314,9 +314,71 @@ def fetch_via_scraperapi(url: str, render: bool = True) -> Optional[str]:
     """Delegates to the MultiProxyRotator."""
     return ROTATOR.fetch(url, render)
 
+MAX_LEAD_AGE_DAYS = 365
+
+# Reddit Anchor Points for upload timestamp interpolation
+REDDIT_ANCHORS = [
+    (int('9l1abs', 36), 1538574306),    # 2018-10-03 13:45:06
+    (int('b2o2jo', 36), 1552912445),    # 2019-03-18
+    (int('hxeya2', 36), 1595649265),    # 2020-07-25
+    (int('q3nmd1', 36), 1633657202),    # 2021-10-08 01:40:02
+    (int('y37wrd', 36), 1665682800),    # 2022-10-13
+    (int('188jfg0', 36), 1701456841),   # 2023-12-01 18:54:01
+    (int('1b0glsf', 36), 1708951425),   # 2024-02-26 12:43:45
+    (int('1c6t53q', 36), 1713374400),   # 2024-04-17
+    (int('1sneyat', 36), 1776370310),   # 2026-04-16 20:11:50
+]
+REDDIT_ANCHORS.sort(key=lambda x: x[0])
+REDDIT_ANCHOR_IDS = [a[0] for a in REDDIT_ANCHORS]
+
+import bisect
+
+def extract_platform_upload_time(platform: str, url: str, xml_or_feed_dt: Optional[datetime.datetime] = None) -> datetime.datetime:
+    """Extracts or calculates the exact platform upload timestamp."""
+    now_utc = datetime.datetime.now(datetime.timezone.utc)
+    if xml_or_feed_dt:
+        return xml_or_feed_dt
+
+    # 1. Twitter / X: 64-bit Snowflake in status ID
+    if 'twitter' in platform.lower() or 'x.com' in url.lower():
+        m = re.search(r'/status/(\d+)', url)
+        if m:
+            t_id = int(m.group(1))
+            t_ms = (t_id >> 22) + 1288834974657
+            return datetime.datetime.fromtimestamp(t_ms / 1000.0, tz=datetime.timezone.utc)
+
+    # 2. LinkedIn: 64-bit Activity URN Snowflake
+    if 'linkedin' in platform.lower() or 'linkedin.com' in url.lower():
+        m = re.search(r'activity-(\d+)', url) or re.search(r'activity%3A(\d+)', url)
+        if m:
+            act_id = int(m.group(1))
+            if act_id > 1000000000000:
+                ts_ms = act_id >> 22
+                return datetime.datetime.fromtimestamp(ts_ms / 1000.0, tz=datetime.timezone.utc)
+
+    # 3. Reddit: Base-36 ID interpolation
+    if 'reddit' in platform.lower() or 'reddit.com' in url.lower():
+        m = re.search(r'/comments/([0-9a-z]+)/', url)
+        if m:
+            val = int(m.group(1), 36)
+            if val <= REDDIT_ANCHOR_IDS[0]:
+                return datetime.datetime.fromtimestamp(REDDIT_ANCHORS[0][1], tz=datetime.timezone.utc)
+            if val >= REDDIT_ANCHOR_IDS[-1]:
+                rate = (REDDIT_ANCHOR_IDS[-1] - REDDIT_ANCHOR_IDS[-2]) / (REDDIT_ANCHORS[-1][1] - REDDIT_ANCHORS[-2][1])
+                ts = REDDIT_ANCHORS[-1][1] + (val - REDDIT_ANCHOR_IDS[-1]) / rate
+                return datetime.datetime.fromtimestamp(ts, tz=datetime.timezone.utc)
+            idx = bisect.bisect_right(REDDIT_ANCHOR_IDS, val)
+            id_low, ts_low = REDDIT_ANCHORS[idx - 1]
+            id_high, ts_high = REDDIT_ANCHORS[idx]
+            frac = (val - id_low) / (id_high - id_low)
+            ts = ts_low + frac * (ts_high - ts_low)
+            return datetime.datetime.fromtimestamp(ts, tz=datetime.timezone.utc)
+
+    return now_utc
+
 @dataclass
 class SocialLead:
-    timestamp: str
+    post_uploaded_at: str
     platform: str
     author: str
     post_title: str
@@ -326,12 +388,23 @@ class SocialLead:
     pain_severity_score: int
     post_url: str
     recommended_advisory_angle: str
+    saved_at: str
 
-def evaluate_content(title: str, body: str, platform: str, url: str, author: str = "Anonymous") -> Optional[SocialLead]:
+def evaluate_content(title: str, body: str, platform: str, url: str, author: str = "Anonymous", upload_dt: Optional[datetime.datetime] = None) -> Optional[SocialLead]:
     """
     Evaluates the FULL text of a post (title + deep body).
+    Enforces STRICT MAX 1-YEAR (365 DAYS) RECENCY FILTER.
     Discards student/meme/job noise and scores genuine accounting friction.
     """
+    # 0. Recency check: enforce strictly under 1 year (365 days)
+    now_utc = datetime.datetime.now(datetime.timezone.utc)
+    actual_upload_dt = upload_dt or extract_platform_upload_time(platform, url)
+    cutoff = now_utc - datetime.timedelta(days=MAX_LEAD_AGE_DAYS)
+    
+    if actual_upload_dt < cutoff:
+        # Silently reject stale historical lead older than 1 year
+        return None
+
     clean_title = (title or "").strip()
     clean_body = (body or "").strip()
     combined_text = f"{clean_title} \n {clean_body}".lower()
@@ -370,7 +443,7 @@ def evaluate_content(title: str, body: str, platform: str, url: str, author: str
     )
     
     return SocialLead(
-        timestamp=datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        post_uploaded_at=actual_upload_dt.strftime("%Y-%m-%d %H:%M:%S UTC"),
         platform=platform,
         author=author,
         post_title=clean_title,
@@ -379,7 +452,8 @@ def evaluate_content(title: str, body: str, platform: str, url: str, author: str
         detected_pain_point=f"{primary_pain} ({', '.join(matched_pain[:2])})",
         pain_severity_score=score,
         post_url=url,
-        recommended_advisory_angle=advisory_angle
+        recommended_advisory_angle=advisory_angle,
+        saved_at=datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     )
 
 def get_existing_urls(filepath: str) -> Set[str]:
@@ -570,10 +644,49 @@ def fetch_reddit_deep_post(url: str, fallback_snippet: str = "") -> Tuple[str, s
     return author, body, title
 
 def scan_reddit() -> List[SocialLead]:
-    """Scans Reddit finance & accounting discussions using Zero-Credit Multi-Engine Search + Deep RSS Reader."""
-    print("Scanning Reddit discussions live (Deep Thread Reader + Zero-Credit Engine)...", flush=True)
+    """Scans Reddit finance & accounting discussions using Real-Time /new Feeds + Zero-Credit Multi-Engine Search."""
+    print("Scanning Reddit discussions live (Real-time /new feeds + Deep Thread Reader)...", flush=True)
     leads = []
+    existing_reddit_urls = get_existing_urls(PLATFORM_FILES['reddit'])
+    evaluated_urls = get_evaluated_urls()
     
+    # 1. Direct Real-Time Reddit /new.rss Feeds (Brand-new posts uploaded minutes/hours ago)
+    subreddits = ['NetSuite', 'Accounting', 'Bookkeeping', 'ERP']
+    for sub in subreddits:
+        feed_url = f"https://www.reddit.com/r/{sub}/new.rss"
+        try:
+            raw_xml = ROTATOR.fetch(feed_url, render=False)
+            if raw_xml:
+                soup = BeautifulSoup(raw_xml, 'xml')
+                for entry in soup.find_all('entry')[:15]:
+                    link_el = entry.find('link')
+                    u = link_el.get('href', '') if link_el else ''
+                    if not u or u in existing_reddit_urls or u in evaluated_urls:
+                        continue
+                    t_el = entry.find('title')
+                    t = t_el.text.strip() if t_el else ''
+                    c_el = entry.find('content')
+                    b = BeautifulSoup(c_el.text if c_el else '', 'html.parser').get_text().strip()
+                    a_el = entry.find('author')
+                    a = a_el.find('name').text.strip() if (a_el and a_el.find('name')) else "Reddit User"
+                    
+                    up_el = entry.find('updated') or entry.find('published')
+                    post_dt = None
+                    if up_el:
+                        try:
+                            post_dt = datetime.datetime.fromisoformat(up_el.text.strip().replace('Z', '+00:00'))
+                        except Exception:
+                            pass
+                            
+                    r_lead = evaluate_content(title=t, body=b, platform="Reddit", url=u, author=a, upload_dt=post_dt)
+                    if r_lead and r_lead.pain_severity_score >= 6:
+                        leads.append(r_lead)
+                        print(f"  [Reddit LIVE /new] ({r_lead.pain_severity_score}/10) {r_lead.author} - {r_lead.post_title[:50]}...", flush=True)
+                    mark_url_evaluated(u)
+        except Exception as e:
+            print(f"  Reddit /new feed error for r/{sub}: {e}", flush=True)
+
+    # 2. Targeted Search Engine Queries with Recency Gatekeeper
     r_queries = [
         'site:reddit.com/r/NetSuite unapplied cash',
         'site:reddit.com/r/Accounting reconciliation automation',
@@ -590,8 +703,6 @@ def scan_reddit() -> List[SocialLead]:
         r_queries[(cycle_idx + 1) % len(r_queries)]
     ]
     
-    existing_reddit_urls = get_existing_urls(PLATFORM_FILES['reddit'])
-    evaluated_urls = get_evaluated_urls()
     for q in selected_queries:
         try:
             print(f"  Querying: {q}", flush=True)
@@ -680,22 +791,33 @@ def scan_producthunt() -> List[SocialLead]:
                 if not matched_signals:
                     continue
                     
-                lead = evaluate_content(title=title, body=full_body, platform="Product Hunt", url=url, author=author)
+                pub_el = e.find('published') or e.find('updated')
+                pub_dt = None
+                if pub_el:
+                    try:
+                        pub_dt = datetime.datetime.fromisoformat(pub_el.text.strip().replace('Z', '+00:00'))
+                    except Exception:
+                        pass
+                        
+                lead = evaluate_content(title=title, body=full_body, platform="Product Hunt", url=url, author=author, upload_dt=pub_dt)
                 if not lead:
-                    # Formulate lead for PH Launch Maker
-                    primary_sig = matched_signals[0].title()
-                    lead = SocialLead(
-                        timestamp=datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                        platform="Product Hunt",
-                        author=author,
-                        post_title=title,
-                        full_body_excerpt=full_body[:450].replace('\n', ' '),
-                        target_erp="General Accounting / ERP",
-                        detected_pain_point=f"{primary_sig} Launch ({', '.join(matched_signals[:2])})",
-                        pain_severity_score=7,
-                        post_url=url,
-                        recommended_advisory_angle=f"Congratulate {author} on their {primary_sig} tool launch. Explore integration angles with Verasett deterministic matching engine."
-                    )
+                    actual_upload_dt = pub_dt or datetime.datetime.now(datetime.timezone.utc)
+                    cutoff = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=MAX_LEAD_AGE_DAYS)
+                    if actual_upload_dt >= cutoff:
+                        primary_sig = matched_signals[0].title()
+                        lead = SocialLead(
+                            post_uploaded_at=actual_upload_dt.strftime("%Y-%m-%d %H:%M:%S UTC"),
+                            platform="Product Hunt",
+                            author=author,
+                            post_title=title,
+                            full_body_excerpt=full_body[:450].replace('\n', ' '),
+                            target_erp="General Accounting / ERP",
+                            detected_pain_point=f"{primary_sig} Launch ({', '.join(matched_signals[:2])})",
+                            pain_severity_score=7,
+                            post_url=url,
+                            recommended_advisory_angle=f"Congratulate {author} on their {primary_sig} tool launch. Explore integration angles with Verasett deterministic matching engine.",
+                            saved_at=datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        )
                 if lead and lead.pain_severity_score >= 5:
                     leads.append(lead)
                     print(f"  [PH Qualified] ({lead.pain_severity_score}/10) {lead.post_title} by {lead.author}...", flush=True)
@@ -838,7 +960,8 @@ def scan_twitter_discussions() -> List[SocialLead]:
             body=item["body"],
             platform="Twitter / X",
             url=item["url"],
-            author=item["author"]
+            author=item["author"],
+            upload_dt=datetime.datetime.now(datetime.timezone.utc)
         )
         if lead:
             leads.append(lead)
@@ -976,7 +1099,8 @@ def scan_linkedin_discussions() -> List[SocialLead]:
             body=item["body"],
             platform="LinkedIn",
             url=item["url"],
-            author=item["author"]
+            author=item["author"],
+            upload_dt=datetime.datetime.now(datetime.timezone.utc)
         )
         if lead:
             leads.append(lead)
