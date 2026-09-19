@@ -12,9 +12,10 @@ log_file = os.path.join(desktop_dir, "auto_sync_history.log")
 now_str = datetime.datetime.now().strftime("%Y-%m-%d %I:%M:%S %p")
 
 try:
-    # 1. Fetch & Hard Reset to GitHub Cloud commits
-    subprocess.run(["git", "fetch", "origin", "main"], cwd=repo_dir, capture_output=True, timeout=30)
-    subprocess.run(["git", "reset", "--hard", "origin/main"], cwd=repo_dir, capture_output=True, timeout=30)
+    # 1. Fetch & Hard Reset to GitHub Cloud commits (suppress console window popup)
+    no_window = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
+    subprocess.run(["git", "fetch", "origin", "main"], cwd=repo_dir, capture_output=True, timeout=30, creationflags=no_window)
+    subprocess.run(["git", "reset", "--hard", "origin/main"], cwd=repo_dir, capture_output=True, timeout=30, creationflags=no_window)
 
     # 2. Copy all files to Desktop folder
     repo_leads = os.path.join(repo_dir, "social_leads")

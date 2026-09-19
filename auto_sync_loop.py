@@ -9,9 +9,10 @@ desktop_dir = r"C:\Users\kartik\Desktop\Verasett_Social_Leads"
 
 def sync_cycle():
     try:
-        # Pull latest from GitHub
-        subprocess.run(["git", "fetch", "origin", "main"], cwd=repo_dir, capture_output=True, timeout=25)
-        subprocess.run(["git", "reset", "--hard", "origin/main"], cwd=repo_dir, capture_output=True, timeout=25)
+        # Pull latest from GitHub (suppress console window popup)
+        no_window = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
+        subprocess.run(["git", "fetch", "origin", "main"], cwd=repo_dir, capture_output=True, timeout=25, creationflags=no_window)
+        subprocess.run(["git", "reset", "--hard", "origin/main"], cwd=repo_dir, capture_output=True, timeout=25, creationflags=no_window)
 
         repo_leads = os.path.join(repo_dir, "social_leads")
         if os.path.exists(repo_leads) and os.path.exists(desktop_dir):
