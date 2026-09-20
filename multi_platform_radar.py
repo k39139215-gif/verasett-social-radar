@@ -427,11 +427,11 @@ def evaluate_content(title: str, body: str, platform: str, url: str, author: str
             
     # 4. Severity Scoring (1 to 10)
     score = 5
-    if len(clean_body) > 150:
+    if len(clean_body) > 90:
         score += 2
-    if 'netsuite' in combined_text or 'intacct' in combined_text:
+    if any(erp in combined_text for erp in ['netsuite', 'intacct', 'sap', 'oracle', 'quickbooks', 'dynamics']):
         score += 1
-    if any(word in combined_text for word in ['urgent', 'stuck', 'nightmare', 'broken', 'error', 'frustrated', 'hours', 'manual', 'mismatch', 'bai2', 'lockbox']):
+    if any(word in combined_text for word in ['urgent', 'stuck', 'nightmare', 'broken', 'error', 'frustrated', 'hours', 'manual', 'mismatch', 'bai2', 'lockbox', 'headache', 'pain', 'fail', 'failing', 'delay', 'issue', 'deduction']):
         score += 2
     score = min(10, score)
     
@@ -643,64 +643,79 @@ def fetch_reddit_deep_post(url: str, fallback_snippet: str = "") -> Tuple[str, s
         
     return author, body, title
 
+def fetch_reddit_live_submissions(sub: str, limit: int = 30) -> list:
+    """Fetches real-time Reddit submissions using Arctic Shift + Pullpush fallback (zero-credit, zero-API-key)."""
+    endpoints = [
+        f"https://arctic-shift.photon-reddit.com/api/posts/search?subreddit={sub}&limit={limit}",
+        f"https://api.pullpush.io/reddit/search/submission/?subreddit={sub}&size={limit}"
+    ]
+    for ep in endpoints:
+        try:
+            req = urllib.request.Request(ep, headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'})
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                data = json.loads(resp.read().decode('utf-8', errors='ignore'))
+                items = data.get('data', [])
+                if items:
+                    return items
+        except Exception:
+            continue
+    return []
+
 def scan_reddit() -> List[SocialLead]:
-    """Scans Reddit finance & accounting discussions using Real-Time /new Feeds + Zero-Credit Multi-Engine Search."""
-    print("Scanning Reddit discussions live (Real-time /new feeds + Deep Thread Reader)...", flush=True)
+    """Scans Reddit finance & accounting discussions using Arctic Shift/Pullpush + /new feeds + Zero-Credit Search."""
+    print("Scanning Reddit discussions live (Arctic Shift/Pullpush + Deep Reader)...", flush=True)
     leads = []
     existing_reddit_urls = get_existing_urls(PLATFORM_FILES['reddit'])
     evaluated_urls = get_evaluated_urls()
+    cycle_idx = int(time.time() // 1800)
     
-    # 1. Direct Real-Time Reddit /new.rss Feeds (Brand-new posts uploaded minutes/hours ago)
+    # 1. Tier-0: Arctic Shift & Pullpush Live Submissions (Zero-Credit, Captcha-Free Reddit Feeds)
     subreddits = ['NetSuite', 'Accounting', 'Bookkeeping', 'ERP']
     for sub in subreddits:
-        feed_url = f"https://www.reddit.com/r/{sub}/new.rss"
         try:
-            raw_xml = ROTATOR.fetch(feed_url, render=False)
-            if raw_xml:
-                soup = BeautifulSoup(raw_xml, 'xml')
-                for entry in soup.find_all('entry')[:15]:
-                    link_el = entry.find('link')
-                    u = link_el.get('href', '') if link_el else ''
-                    if not u or u in existing_reddit_urls or u in evaluated_urls:
-                        continue
-                    t_el = entry.find('title')
-                    t = t_el.text.strip() if t_el else ''
-                    c_el = entry.find('content')
-                    b = BeautifulSoup(c_el.text if c_el else '', 'html.parser').get_text().strip()
-                    a_el = entry.find('author')
-                    a = a_el.find('name').text.strip() if (a_el and a_el.find('name')) else "Reddit User"
-                    
-                    up_el = entry.find('updated') or entry.find('published')
-                    post_dt = None
-                    if up_el:
-                        try:
-                            post_dt = datetime.datetime.fromisoformat(up_el.text.strip().replace('Z', '+00:00'))
-                        except Exception:
-                            pass
-                            
-                    r_lead = evaluate_content(title=t, body=b, platform="Reddit", url=u, author=a, upload_dt=post_dt)
-                    if r_lead and r_lead.pain_severity_score >= 6:
-                        leads.append(r_lead)
-                        print(f"  [Reddit LIVE /new] ({r_lead.pain_severity_score}/10) {r_lead.author} - {r_lead.post_title[:50]}...", flush=True)
-                    mark_url_evaluated(u)
-        except Exception as e:
-            print(f"  Reddit /new feed error for r/{sub}: {e}", flush=True)
+            items = fetch_reddit_live_submissions(sub, limit=25)
+            for item in items:
+                permalink = item.get('permalink', '')
+                u = f"https://reddit.com{permalink}" if permalink else ""
+                if not u or u in existing_reddit_urls or u in evaluated_urls:
+                    continue
+                t = item.get('title', '').strip()
+                b = item.get('selftext', '').strip()
+                a_name = item.get('author', '').strip()
+                a = f"u/{a_name}" if a_name and a_name != '[deleted]' else "Reddit User"
+                c_utc = item.get('created_utc')
+                p_dt = datetime.datetime.fromtimestamp(c_utc, tz=datetime.timezone.utc) if c_utc else None
+                r_lead = evaluate_content(title=t, body=b, platform="Reddit", url=u, author=a, upload_dt=p_dt)
+                if r_lead and r_lead.pain_severity_score >= 6:
+                    leads.append(r_lead)
+                    print(f"  [Reddit LIVE] ({r_lead.pain_severity_score}/10) {r_lead.author} - {r_lead.post_title[:50]}...", flush=True)
+                mark_url_evaluated(u)
+        except Exception as pe:
+            print(f"  Reddit live feed note for r/{sub}: {pe}", flush=True)
 
-    # 2. Targeted Search Engine Queries with Recency Gatekeeper
+    # 2. Targeted Multi-Engine Queries (16 Focused Signals, 3 per cycle)
     r_queries = [
         'site:reddit.com/r/NetSuite unapplied cash',
+        'site:reddit.com/r/NetSuite bank reconciliation',
+        'site:reddit.com/r/NetSuite match bank data',
+        'site:reddit.com/r/NetSuite short pay deduction',
         'site:reddit.com/r/Accounting reconciliation automation',
         'site:reddit.com/r/Accounting bank reconciliation',
+        'site:reddit.com/r/Accounting unapplied cash suspense',
+        'site:reddit.com/r/Accounting remittance advice mismatch',
         'site:reddit.com/r/Bookkeeping unapplied deposit undeposited funds',
-        'site:reddit.com/r/NetSuite short pay deduction',
-        'site:reddit.com/r/Accounting bank rec nightmare',
+        'site:reddit.com/r/Bookkeeping bank rec nightmare',
         'site:reddit.com/r/ERP accounts receivable reconciliation',
-        'site:reddit.com/r/Accounting cash application automation'
+        'site:reddit.com/r/Accounting cash application automation',
+        'site:reddit.com/r/QuickBooks bank feed reconciliation',
+        'site:reddit.com/r/Accounting month end close reconciliation',
+        'site:reddit.com/r/NetSuite lockbox BAI2 payment',
+        'site:reddit.com/r/Accounting accounts receivable write off deduction'
     ]
-    cycle_idx = int(time.time() // 1800)
     selected_queries = [
         r_queries[cycle_idx % len(r_queries)],
-        r_queries[(cycle_idx + 1) % len(r_queries)]
+        r_queries[(cycle_idx + 1) % len(r_queries)],
+        r_queries[(cycle_idx + 2) % len(r_queries)]
     ]
     
     for q in selected_queries:
@@ -713,7 +728,6 @@ def scan_reddit() -> List[SocialLead]:
                     t = res.get('title', '').replace(' - Reddit', '').replace(' : r/NetSuite', '').replace(' : r/Accounting', '').replace(' : r/Bookkeeping', '')
                     s = res.get('snippet', '')
                     
-                    # Deep Reddit Reader: Fetch full author, unshortened post body, and top comments
                     deep_author, deep_body, deep_title = fetch_reddit_deep_post(u, fallback_snippet=s)
                     final_title = deep_title if deep_title else t
                     final_author = deep_author if deep_author else "Reddit User"
@@ -841,13 +855,22 @@ def scan_twitter_discussions() -> List[SocialLead]:
             'site:x.com lockbox BAI2 reconciliation',
             'site:x.com short pay deduction accounts receivable',
             'site:x.com bank reconciliation NetSuite unapplied',
+            'site:x.com QuickBooks bank reconciliation',
+            'site:x.com Stripe payout reconciliation accounting',
+            'site:x.com Sage Intacct unapplied cash',
+            'site:x.com accounts receivable automation DSO',
+            'site:x.com remittance advice detachment AR',
+            'site:x.com invoice matching reconciliation finance',
+            'site:x.com month end close accounts receivable',
             'site:twitter.com accounts receivable reconciliation',
-            'site:x.com billing reconciliation quickbooks'
+            'site:twitter.com NetSuite bank reconciliation',
+            'site:twitter.com cash application automation'
         ]
         cycle_idx = int(time.time() // 1800)
         selected_queries = [
             tw_queries[cycle_idx % len(tw_queries)],
-            tw_queries[(cycle_idx + 1) % len(tw_queries)]
+            tw_queries[(cycle_idx + 1) % len(tw_queries)],
+            tw_queries[(cycle_idx + 2) % len(tw_queries)]
         ]
         for q in selected_queries:
             results = ROTATOR.search_google(q, max_items=10)
@@ -1123,7 +1146,8 @@ def run_radar_cycle():
         try:
             import subprocess
             import shutil
-            subprocess.run(["git", "pull", "--rebase", "--autostash"], cwd=repo_dir, capture_output=True, timeout=15)
+            no_window = subprocess.CREATE_NO_WINDOW if sys.platform == 'win32' else 0
+            subprocess.run(["git", "pull", "--rebase", "--autostash"], cwd=repo_dir, capture_output=True, timeout=15, creationflags=no_window)
             repo_leads = os.path.join(repo_dir, 'social_leads')
             if os.path.exists(repo_leads):
                 desktop_dir = r"C:\Users\kartik\Desktop\Verasett_Social_Leads"
@@ -1159,9 +1183,10 @@ def run_radar_cycle():
     if os.path.exists(os.path.join(repo_dir, '.git')):
         try:
             import subprocess
-            subprocess.run(["git", "add", "social_leads/"], cwd=repo_dir, capture_output=True, timeout=10)
-            subprocess.run(["git", "commit", "-m", "Local Radar: Sync verified leads [skip ci]"], cwd=repo_dir, capture_output=True, timeout=10)
-            subprocess.run(["git", "push", "origin", "main"], cwd=repo_dir, capture_output=True, timeout=15)
+            no_window = subprocess.CREATE_NO_WINDOW if sys.platform == 'win32' else 0
+            subprocess.run(["git", "add", "social_leads/"], cwd=repo_dir, capture_output=True, timeout=10, creationflags=no_window)
+            subprocess.run(["git", "commit", "-m", "Local Radar: Sync verified leads [skip ci]"], cwd=repo_dir, capture_output=True, timeout=10, creationflags=no_window)
+            subprocess.run(["git", "push", "origin", "main"], cwd=repo_dir, capture_output=True, timeout=15, creationflags=no_window)
         except Exception:
             pass
 
