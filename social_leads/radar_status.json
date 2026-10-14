@@ -1,11 +1,11 @@
 {
-  "last_active_timestamp": "2026-10-14 17:56:07",
+  "last_active_timestamp": "2026-10-14 18:02:18",
   "radar_daemon_status": "RUNNING_ACTIVE",
   "cycle_interval_seconds": 1800,
-  "total_verified_leads": 868,
+  "total_verified_leads": 869,
   "lead_counts": {
     "reddit_leads.csv": 158,
-    "twitter_leads.csv": 183,
+    "twitter_leads.csv": 184,
     "linkedin_leads.csv": 504,
     "producthunt_leads.csv": 23
   },
